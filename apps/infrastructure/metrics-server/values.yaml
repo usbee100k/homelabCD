@@ -1,8 +1,5 @@
 replicas: 2
 
-apiService:
-
-  create: true
 
 args:
 

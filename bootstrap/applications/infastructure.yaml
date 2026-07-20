@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 
 metadata:
-  name: ingress-nginx
+  name: infrastructure
   namespace: argocd
 
 spec:
@@ -10,32 +10,19 @@ spec:
   project: homelab
 
   source:
-
-    repoURL: https://kubernetes.github.io/ingress-nginx
-
-    chart: ingress-nginx
-
-    targetRevision: 4.13.0
-
-    helm:
-      valueFiles:
-
-        - values.yaml
+    repoURL: REPLACE_ME 
+    targetRevision: main
+    path: apps/infrastructure
 
   destination:
-
     server: https://kubernetes.default.svc
-
-    namespace: ingress-nginx
+    namespace: argocd
 
   syncPolicy:
 
     automated:
-
       prune: true
-
       selfHeal: true
 
     syncOptions:
-
       - CreateNamespace=true

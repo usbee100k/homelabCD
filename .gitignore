@@ -1,0 +1,6 @@
+generated/*
+logs/*
+*.log
+*.key
+*.age
+secrets/

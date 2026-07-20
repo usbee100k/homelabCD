@@ -62,7 +62,11 @@ install_prerequisites() {
         ca-certificates \
         curl \
         wget \
+        sops \
+        age\
+        git\
         gpg \
+        yq \
         jq \
         git \
         vim \

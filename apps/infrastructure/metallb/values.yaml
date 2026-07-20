@@ -1,0 +1,8 @@
+controller:
+
+  enabled: true
+
+
+speaker:
+
+  enabled: true

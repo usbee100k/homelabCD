@@ -1,0 +1,40 @@
+cluster:
+  name: homelab
+
+kubernetes:
+  version: "1.36.2"
+
+network:
+  vip: "192.168.50.222" ## Change to yours
+  podSubnet: "10.0.0.0/16"
+  serviceSubnet: "10.96.0.0/12"
+  dnsDomain: "cluster.local"
+
+github:
+  repo: ""
+  branch: "main"
+
+argocd:
+  namespace: "argocd"
+
+features:
+  cilium: true
+  certManager: true
+  longhorn: true
+  ingressNginx: true
+  metricsServer: true
+  metallb: true
+  monitoring: true
+  grafana: true
+  prometheus: true
+  loki: true
+  tempo: true
+  harbor: false
+  gitea: false
+  authentik: false
+  vault: false
+  cloudnativepg: true
+  minio: true
+  ollama: false
+  openWebUI: false
+  anythingLLM: false

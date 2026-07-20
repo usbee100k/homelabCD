@@ -1,53 +1,141 @@
 #!/usr/bin/env bash
 
+
+#############################################
+# COMMON FUNCTIONS
+#############################################
+
+
 pause() {
+
     read -rp "Press Enter to continue..."
+
 }
+
+
 
 header() {
+
     clear
 
-    echo "========================================="
-    echo "      Homelab Installer v0.1"
-    echo "========================================="
+    echo "================================================"
+    echo "          HOMELAB KUBERNETES PLATFORM"
+    echo "================================================"
     echo
+
+    echo "Cluster : ${CLUSTER_NAME:-unknown}"
+
+    echo "Version : ${KUBERNETES_VERSION:-unknown}"
+
+    echo "VIP     : ${VIP_ADDRESS:-unknown}"
+
+    echo
+
 }
+
+
 
 main_menu() {
 
+
+while true
+do
+
     header
 
-    echo "1) Bootstrap Cluster"
-    echo "2) Join Control Plane"
-    echo "3) Join Worker"
-    echo "4) System Information"
-    echo "5) Exit"
+
+    echo "Select Operation"
     echo
 
-    read -rp "Selection: " OPTION
+    echo "1) Bootstrap New Cluster"
+    echo "2) Join Additional Control Plane"
+    echo "3) Join Worker Node"
+    echo "4) Repair Existing Node"
+    echo "5) Generate Join Commands"
+    echo "6) Cluster Health Check"
+    echo "7) Exit"
 
-    case "$OPTION" in
-        1)
-            source roles/bootstrap.sh
-            ;;
-        2)
-            source roles/controlplane.sh
-            ;;
-        3)
-            source roles/worker.sh
-            ;;
-        4)
-            system_information
-            pause
-            main_menu
-            ;;
-        5)
-            exit 0
-            ;;
-        *)
-            log_error "Invalid Selection"
-            sleep 2
-            main_menu
-            ;;
+    echo
+
+
+    read -rp "Choice: " MENU_OPTION
+
+
+
+    case "${MENU_OPTION}" in
+
+
+    1)
+
+        source "${ROOT_DIR}/roles/bootstrap.sh"
+
+        ;;
+
+
+    2)
+
+        bash "${ROOT_DIR}/roles/controlplane.sh"
+
+        ;;
+
+
+    3)
+
+        bash "${ROOT_DIR}/roles/worker.sh"
+
+        ;;
+
+
+    4)
+
+        repair_node
+
+        pause
+
+        ;;
+
+
+    5)
+
+        generate_join_commands
+
+        pause
+
+        ;;
+
+
+    6)
+
+        cluster_health
+
+        pause
+
+        ;;
+
+
+    7)
+
+        echo
+
+        log_info "Exiting installer."
+
+        exit 0
+
+        ;;
+
+
+    *)
+
+        log_error "Invalid selection."
+
+        sleep 2
+
+        ;;
+
+
     esac
+
+
+done
+
 }

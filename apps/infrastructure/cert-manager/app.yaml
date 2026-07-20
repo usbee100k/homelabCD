@@ -9,18 +9,27 @@ spec:
 
   project: homelab
 
-  source:
-    repoURL: https://charts.jetstack.io
-    chart: cert-manager
-    targetRevision: v1.18.2
+  sources:
 
-    helm:
-      valueFiles:
-        - values.yaml
+    - repoURL: https://charts.jetstack.io
+      chart: cert-manager
+      targetRevision: v1.18.2
+
+      helm:
+        valueFiles:
+          - $values/apps/infrastructure/cert-manager/values.yaml
+
+
+    - repoURL: REPLACE_ME
+      targetRevision: main
+      ref: values
+
 
   destination:
+
     server: https://kubernetes.default.svc
     namespace: cert-manager
+
 
   syncPolicy:
 

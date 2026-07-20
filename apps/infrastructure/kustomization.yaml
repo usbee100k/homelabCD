@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+
+  - cert-manager/app.yaml
+  - longhorn/app.yaml
+  - ingress-nginx/app.yaml
+  - metrics-server/app.yaml
+  - metallb/app.yaml

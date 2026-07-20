@@ -2,14 +2,11 @@ defaultSettings:
 
   defaultReplicaCount: 3
 
+  replicaSoftAntiAffinity: true
+
   storageMinimalAvailablePercentage: 10
 
-  replicaSoftAntiAffinity: true
 
 persistence:
 
   defaultClass: true
-
-ingress:
-
-  enabled: false

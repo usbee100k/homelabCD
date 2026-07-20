@@ -25,12 +25,22 @@ install_argocd() {
 
 bootstrap_gitops() {
 
+
     log_info "Bootstrapping GitOps..."
 
-    kubectl apply -f bootstrap/projects/default-project.yaml
 
-    kubectl apply -f bootstrap/root-app.yaml
+    kubectl apply \
+        -f bootstrap/projects/default-project.yaml
 
-    log_ok "GitOps Bootstrap Complete."
+
+
+    sed \
+        "s|REPLACE_ME|${GITHUB_REPO}|g" \
+        bootstrap/root-app.yaml \
+        | kubectl apply -f -
+
+
+
+    log_ok "GitOps Bootstrapped."
 
 }

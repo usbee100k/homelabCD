@@ -9,34 +9,33 @@ spec:
 
   project: homelab
 
-  source:
+  sources:
 
-    repoURL: https://charts.longhorn.io
+    - repoURL: https://charts.longhorn.io
+      chart: longhorn
+      targetRevision: 1.9.0
 
-    chart: longhorn
+      helm:
+        valueFiles:
+          - $values/apps/infrastructure/longhorn/values.yaml
 
-    targetRevision: 1.9.0
 
-    helm:
+    - repoURL: REPLACE_ME
+      targetRevision: main
+      ref: values
 
-      valueFiles:
-
-        - values.yaml
 
   destination:
 
     server: https://kubernetes.default.svc
-
     namespace: longhorn-system
+
 
   syncPolicy:
 
     automated:
-
       prune: true
-
       selfHeal: true
 
     syncOptions:
-
       - CreateNamespace=true

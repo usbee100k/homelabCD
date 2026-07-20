@@ -4,6 +4,3 @@ replicaCount: 2
 
 prometheus:
   enabled: true
-
-startupapicheck:
-  enabled: true

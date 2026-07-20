@@ -36,3 +36,18 @@ EOF
 log_ok "kubeadm configuration created."
 
 }
+
+kubeadm_init() {
+
+
+    log_info "Running kubeadm init"
+
+
+    kubeadm init \
+        --config "${ROOT_DIR}/generated/kubeadm-config.yaml" \
+        --upload-certs
+
+
+    log_ok "Kubernetes control plane initialized."
+
+}

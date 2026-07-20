@@ -1,89 +1,215 @@
 #!/usr/bin/env bash
 
-header
+set -Eeuo pipefail
 
-NODE_ROLE="Bootstrap"
 
-validate_system
+#############################################
+# FIRST CONTROL PLANE BOOTSTRAP
+#############################################
 
-detect_network
 
-show_summary
+bootstrap_cluster() {
 
-read -rp "Continue? (y/N): " ANSWER
 
-[[ "$ANSWER" != "y" ]] && main_menu
+    header
 
-next_step "Updating Ubuntu"
-update_system
-finish_step
 
-next_step "Installing Prerequisites"
-install_prerequisites
-finish_step
+    log_info "Starting Kubernetes cluster bootstrap"
 
-next_step "Disabling Swap"
-disable_swap
-finish_step
 
-next_step "Configuring Kernel"
-configure_kernel_modules
-configure_sysctl
-mount_bpf
-finish_step
 
-next_step "Installing Containerd"
-install_containerd
-finish_step
+    #########################################
+    # STEP 1
+    #########################################
 
-next_step "Installing Kubernetes"
-install_kubernetes
-finish_step
+    next_step "Validating Host"
 
-next_step "Installing kube-vip"
-install_kubevip
-finish_step
+    validate_system
 
-next_step "Initializing Cluster"
-generate_kubeadm_config
-initialize_cluster
-configure_kubectl
-generate_join_commands
-finish_step
+    finish_step
 
-next_step "Installing Helm"
-install_helm
-finish_step
 
-next_step "Installing Cilium"
-install_cilium_cli
-install_cilium
-wait_for_cilium
-finish_step
 
-next_step "Cluster Health Check"
-wait_for_nodes
-wait_for_coredns
-cluster_health
-finish_step
+    #########################################
+    # STEP 2
+    #########################################
 
-next_step "Installing Argo CD"
-install_argocd
-finish_step
+    next_step "Preparing Operating System"
 
-next_step "Bootstrapping GitOps"
-bootstrap_gitops
-finish_step
+    update_system
 
-echo
-echo "============================================================"
-echo
-log_ok "Bootstrap Complete"
-echo
-echo "Next Step:"
-echo
-echo "Install ArgoCD"
-echo
-pause
+    disable_swap
 
-main_menu
+    configure_kernel_modules
+
+    configure_sysctl
+
+    mount_bpf
+
+    finish_step
+
+
+
+    #########################################
+    # STEP 3
+    #########################################
+
+    next_step "Installing Container Runtime"
+
+    install_containerd
+
+    finish_step
+
+
+
+    #########################################
+    # STEP 4
+    #########################################
+
+    next_step "Installing Kubernetes Packages"
+
+    install_kubernetes
+
+    finish_step
+
+
+
+    #########################################
+    # STEP 5
+    #########################################
+
+    next_step "Configuring kube-vip"
+
+    install_kubevip
+
+
+    finish_step
+
+
+
+    #########################################
+    # STEP 6
+    #########################################
+
+    next_step "Initializing Kubernetes Cluster"
+
+
+    generate_kubeadm_config
+
+
+    kubeadm_init
+
+
+    configure_kubectl
+
+
+    finish_step
+
+
+
+    #########################################
+    # STEP 7
+    #########################################
+
+    next_step "Installing Helm"
+
+
+    install_helm
+
+
+    finish_step
+
+
+
+    #########################################
+    # STEP 8
+    #########################################
+
+    next_step "Installing Cilium"
+
+
+    install_cilium
+
+
+    wait_for_cilium
+
+
+    finish_step
+
+
+
+    #########################################
+    # STEP 9
+    #########################################
+
+    next_step "Installing Argo CD"
+
+
+    install_argocd
+
+
+    finish_step
+
+
+
+    #########################################
+    # STEP 10
+    #########################################
+
+    next_step "Starting GitOps"
+
+
+    bootstrap_gitops
+
+
+    finish_step
+
+
+
+    #########################################
+    # STEP 11
+    #########################################
+
+    next_step "Generating Cluster Recovery Files"
+
+
+    generate_join_commands
+
+
+    generate_report
+
+
+    finish_step
+
+
+
+    #########################################
+    # COMPLETE
+    #########################################
+
+
+    header
+
+
+    log_ok "Cluster Bootstrap Complete"
+
+
+    echo
+
+    echo "Generated Files:"
+
+    echo
+
+    echo "generated/"
+    echo " ├── cluster-info.yaml"
+    echo " ├── worker_join.sh"
+    echo " └── controlplane_join.sh"
+
+    echo
+
+
+}
+
+
+
+bootstrap_cluster

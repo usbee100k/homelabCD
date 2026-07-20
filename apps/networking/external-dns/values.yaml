@@ -1,0 +1,23 @@
+provider:
+
+  name: cloudflare
+
+
+policy:
+
+  sync
+
+
+sources:
+
+- ingress
+
+
+domainFilters:
+
+- example.com
+
+
+txtOwnerId:
+
+  homelab-cluster
