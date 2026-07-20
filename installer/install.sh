@@ -11,6 +11,56 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 export ROOT_DIR
 
+#############################################
+# Create default config if missing
+#############################################
+
+mkdir -p "${ROOT_DIR}/config"
+
+if [[ ! -f "${ROOT_DIR}/config/defaults.env" ]]; then
+
+    if [[ -f "${ROOT_DIR}/config/defaults.example.env" ]]; then
+
+        cp "${ROOT_DIR}/config/defaults.example.env" \
+           "${ROOT_DIR}/config/defaults.env"
+
+        echo
+        echo "Created config/defaults.env from defaults.example.env"
+        echo
+
+    else
+
+        cat > "${ROOT_DIR}/config/defaults.env" <<EOF
+#!/usr/bin/env bash
+
+CLUSTER_NAME="homelab"
+
+GITHUB_REPO=""
+
+BOOTSTRAP_REPO=""
+
+GIT_BRANCH="main"
+
+KUBERNETES_VERSION="v1.36.2"
+EOF
+
+        echo
+        echo "Created default configuration."
+        echo
+
+    fi
+
+fi
+
+#############################################
+# Load Configuration
+#############################################
+
+source "${ROOT_DIR}/config/defaults.env"
+
+if [[ -f "${ROOT_DIR}/config/versions.env" ]]; then
+    source "${ROOT_DIR}/config/versions.env"
+fi
 
 #############################################
 # CONFIGURATION
