@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: argocd-sync-config
+
+  namespace: argocd
+
+
+data:
+
+  sync-order: |
+
+    core: -10
+
+    certificates: 0
+
+    networking: 10
+
+    storage: 20
+
+    monitoring: 30
+
+    applications: 50
