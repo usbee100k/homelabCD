@@ -1,0 +1,15 @@
+controller:
+
+  replicaCount: 2
+
+  service:
+
+    externalTrafficPolicy: Local
+
+  metrics:
+
+    enabled: true
+
+defaultBackend:
+
+  enabled: true
