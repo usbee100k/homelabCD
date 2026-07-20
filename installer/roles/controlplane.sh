@@ -126,3 +126,7 @@ join_controlplane() {
 
 
 join_controlplane
+
+register_node
+
+apply_node_labels

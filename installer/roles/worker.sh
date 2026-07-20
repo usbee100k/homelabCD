@@ -125,3 +125,7 @@ join_worker() {
 
 
 join_worker
+
+register_node
+
+apply_node_labels

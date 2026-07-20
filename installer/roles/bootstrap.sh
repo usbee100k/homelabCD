@@ -177,6 +177,10 @@ bootstrap_cluster() {
 
 
     generate_report
+    
+    register_node
+
+    apply_node_labels
 
 
     finish_step
