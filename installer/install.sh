@@ -18,5 +18,6 @@ source "${ROOT_DIR}/lib/kubeadm.sh"
 source "${ROOT_DIR}/lib/helm.sh"
 source "${ROOT_DIR}/lib/cilium.sh"
 source "${ROOT_DIR}/lib/health.sh"
+source "${ROOT_DIR}/lib/argocd.sh"
 
 main_menu

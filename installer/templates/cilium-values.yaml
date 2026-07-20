@@ -1,6 +1,6 @@
 kubeProxyReplacement: true
 
-k8sServiceHost: 192.168.50.222
+k8sServiceHost: 192.168.50.222 ## Change to Your VIP 
 
 k8sServicePort: 6443
 
