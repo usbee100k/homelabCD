@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 
 #############################################
-# ADDITIONAL CONTROL PLANE NODE
+# ADDITIONAL CONTROL PLANE JOIN
 #############################################
 
 
@@ -26,6 +26,7 @@ join_controlplane() {
     next_step "Preparing Operating System"
 
 
+
     validate_system
 
     update_system
@@ -37,6 +38,7 @@ join_controlplane() {
     configure_sysctl
 
     mount_bpf
+
 
 
     finish_step
@@ -51,7 +53,9 @@ join_controlplane() {
     next_step "Installing Container Runtime"
 
 
+
     install_containerd
+
 
 
     finish_step
@@ -59,36 +63,58 @@ join_controlplane() {
 
 
     #########################################
-    # Kubernetes
+    # Kubernetes Packages
     #########################################
 
 
-    next_step "Installing Kubernetes"
+    next_step "Installing Kubernetes Packages"
+
 
 
     install_kubernetes
 
 
+
     finish_step
 
 
 
     #########################################
-    # Join Cluster
+    # Download Bootstrap Secrets
     #########################################
 
 
-    next_step "Joining Control Plane"
+    next_step "Retrieving Cluster Join Credentials"
 
 
 
-    if [[ ! -f "${ROOT_DIR}/generated/controlplane_join.sh" ]]; then
+    download_bootstrap_secrets
+
+
+
+    finish_step
+
+
+
+    #########################################
+    # Join Control Plane
+    #########################################
+
+
+    next_step "Joining Kubernetes Control Plane"
+
+
+
+    if [[ ! -f "${ROOT_DIR}/generated/secrets/controlplane_join.sh" ]]; then
+
 
         log_error "Missing control plane join command."
 
+
         echo
 
-        echo "Copy generated/controlplane_join.sh from the cluster leader."
+        echo "Bootstrap repository did not contain controlplane_join.sh"
+
 
         exit 1
 
@@ -96,7 +122,7 @@ join_controlplane() {
 
 
 
-    bash "${ROOT_DIR}/generated/controlplane_join.sh"
+    bash "${ROOT_DIR}/generated/secrets/controlplane_join.sh"
 
 
 
@@ -105,15 +131,73 @@ join_controlplane() {
 
 
     #########################################
-    # Validate
+    # Configure kubectl
     #########################################
 
 
-    next_step "Validating Node"
+    next_step "Configuring kubectl"
+
+
+
+    configure_kubectl
+
+
+
+    finish_step
+
+
+
+    #########################################
+    # Node Registration
+    #########################################
+
+
+    next_step "Registering Node"
+
+
+
+    register_node
+
+
+
+    finish_step
+
+
+
+    #########################################
+    # Apply Labels
+    #########################################
+
+
+    next_step "Applying Node Labels"
+
+
+
+    apply_node_labels
+
+
+    detect_special_hardware
+
+
+
+    finish_step
+
+
+
+    #########################################
+    # Verify Cluster
+    #########################################
+
+
+    next_step "Validating Control Plane"
 
 
 
     kubectl get nodes
+
+
+    kubectl get pods -A
+
 
 
     finish_step
@@ -125,8 +209,5 @@ join_controlplane() {
 }
 
 
+
 join_controlplane
-
-register_node
-
-apply_node_labels

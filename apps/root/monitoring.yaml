@@ -3,9 +3,14 @@ kind: Application
 
 metadata:
 
-  name: homelab-root
+  name: monitoring
 
   namespace: argocd
+
+
+  annotations:
+
+    argocd.argoproj.io/sync-wave: "30"
 
 
 spec:
@@ -19,7 +24,7 @@ spec:
 
     targetRevision: REPLACE_BRANCH
 
-    path: apps/root
+    path: apps/monitoring
 
 
   destination:
@@ -27,7 +32,6 @@ spec:
     server: https://kubernetes.default.svc
 
     namespace: argocd
-
 
 
   syncPolicy:

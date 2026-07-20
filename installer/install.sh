@@ -55,8 +55,10 @@ source "${ROOT_DIR}/lib/health.sh"
 source "${ROOT_DIR}/lib/report.sh"
 source "${ROOT_DIR}/lib/repair.sh"
 source "${ROOT_DIR}/lib/join.sh"
-
-
+source "${ROOT_DIR}/config/encryption.env"
+source "${ROOT_DIR}/lib/bootstrap-secrets.sh"
+source "${ROOT_DIR}/lib/bootstrap-upload.sh"
+source "${ROOT_DIR}/lib/bootstrap-download.sh"
 
 #############################################
 # LOAD CLUSTER CONFIG
@@ -70,6 +72,12 @@ load_config
 #############################################
 
 ask_github_repo
+
+ask_bootstrap_repo
+
+validate_github_access
+
+validate_bootstrap_access
 
 
 #############################################

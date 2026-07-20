@@ -1,11 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 
+
 metadata:
 
-  name: homelab-root
+  name: infrastructure
 
   namespace: argocd
+
+
+  annotations:
+
+    argocd.argoproj.io/sync-wave: "0"
 
 
 spec:
@@ -19,7 +25,7 @@ spec:
 
     targetRevision: REPLACE_BRANCH
 
-    path: apps/root
+    path: apps/infrastructure
 
 
   destination:
@@ -27,7 +33,6 @@ spec:
     server: https://kubernetes.default.svc
 
     namespace: argocd
-
 
 
   syncPolicy:

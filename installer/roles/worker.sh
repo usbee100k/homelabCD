@@ -36,6 +36,8 @@ join_worker() {
 
     configure_sysctl
 
+    mount_bpf
+
 
     finish_step
 
@@ -72,6 +74,23 @@ join_worker() {
 
 
     #########################################
+    # Download Bootstrap Secrets
+    #########################################
+
+
+    next_step "Retrieving Cluster Join Credentials"
+
+
+
+    download_bootstrap_secrets
+
+
+
+    finish_step
+
+
+
+    #########################################
     # Join Worker
     #########################################
 
@@ -80,7 +99,7 @@ join_worker() {
 
 
 
-    if [[ ! -f "${ROOT_DIR}/generated/worker_join.sh" ]]; then
+    if [[ ! -f "${ROOT_DIR}/generated/secrets/worker_join.sh" ]]; then
 
 
         log_error "Missing worker join command."
@@ -88,7 +107,7 @@ join_worker() {
 
         echo
 
-        echo "Copy generated/worker_join.sh from the control plane."
+        echo "Bootstrap repository did not contain worker_join.sh"
 
 
         exit 1
@@ -97,7 +116,43 @@ join_worker() {
 
 
 
-    bash "${ROOT_DIR}/generated/worker_join.sh"
+    bash "${ROOT_DIR}/generated/secrets/worker_join.sh"
+
+
+
+    finish_step
+
+
+
+    #########################################
+    # Node Registration
+    #########################################
+
+
+    next_step "Registering Node"
+
+
+
+    register_node
+
+
+    finish_step
+
+
+
+    #########################################
+    # Apply Kubernetes Labels
+    #########################################
+
+
+    next_step "Applying Node Labels"
+
+
+
+    apply_node_labels
+
+
+    detect_special_hardware
 
 
 
@@ -113,7 +168,10 @@ join_worker() {
     next_step "Node Validation"
 
 
-    log_info "Worker joined."
+
+    kubectl get nodes
+
+
 
     finish_step
 
@@ -125,7 +183,3 @@ join_worker() {
 
 
 join_worker
-
-register_node
-
-apply_node_labels

@@ -24,7 +24,9 @@ bootstrap_cluster() {
 
     next_step "Validating Host"
 
+
     validate_system
+
 
     finish_step
 
@@ -36,6 +38,7 @@ bootstrap_cluster() {
 
     next_step "Preparing Operating System"
 
+
     update_system
 
     disable_swap
@@ -45,6 +48,7 @@ bootstrap_cluster() {
     configure_sysctl
 
     mount_bpf
+
 
     finish_step
 
@@ -56,7 +60,9 @@ bootstrap_cluster() {
 
     next_step "Installing Container Runtime"
 
+
     install_containerd
+
 
     finish_step
 
@@ -68,7 +74,9 @@ bootstrap_cluster() {
 
     next_step "Installing Kubernetes Packages"
 
+
     install_kubernetes
+
 
     finish_step
 
@@ -79,6 +87,7 @@ bootstrap_cluster() {
     #########################################
 
     next_step "Configuring kube-vip"
+
 
     install_kubevip
 
@@ -156,7 +165,7 @@ bootstrap_cluster() {
     # STEP 10
     #########################################
 
-    next_step "Starting GitOps"
+    next_step "Connecting GitOps Repository"
 
 
     bootstrap_gitops
@@ -170,17 +179,75 @@ bootstrap_cluster() {
     # STEP 11
     #########################################
 
-    next_step "Generating Cluster Recovery Files"
+    next_step "Generating Cluster Join Credentials"
+
 
 
     generate_join_commands
 
 
-    generate_report
-    
+
+    finish_step
+
+
+
+    #########################################
+    # STEP 12
+    #########################################
+
+    next_step "Creating Encrypted Bootstrap Package"
+
+
+
+    create_bootstrap_package
+
+
+
+    upload_bootstrap_package
+
+
+
+    finish_step
+
+
+
+    #########################################
+    # STEP 13
+    #########################################
+
+    next_step "Registering Primary Node"
+
+
+
     register_node
 
+
+
     apply_node_labels
+
+
+
+    detect_special_hardware
+
+
+
+    finish_step
+
+
+
+    #########################################
+    # STEP 14
+    #########################################
+
+    next_step "Cluster Validation"
+
+
+
+    kubectl get nodes
+
+
+    kubectl get pods -A
+
 
 
     finish_step
@@ -195,19 +262,24 @@ bootstrap_cluster() {
     header
 
 
-    log_ok "Cluster Bootstrap Complete"
+    log_ok "Kubernetes Cluster Bootstrap Complete"
 
 
     echo
 
-    echo "Generated Files:"
+    echo "Bootstrap Complete"
 
     echo
 
-    echo "generated/"
-    echo " ├── cluster-info.yaml"
-    echo " ├── worker_join.sh"
-    echo " └── controlplane_join.sh"
+    echo "Private repository updated with:"
+
+    echo
+
+    echo " ├── encrypted worker join"
+
+    echo " ├── encrypted control plane join"
+
+    echo " └── cluster inventory"
 
     echo
 
