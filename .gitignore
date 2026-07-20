@@ -18,31 +18,33 @@ pki/
 etcd/
 *.snapshot
 
-
 #############################################
-# Bootstrap Secrets
+# Generated Bootstrap Files
 #############################################
 
-# Generated bootstrap packages
 generated/
 bootstrap/generated/
 
-# Join commands
+# Generated join commands
 worker_join.sh
 controlplane_join.sh
 join-command.sh
 
-# Encrypted secrets
+#############################################
+# Encrypted Secrets
+#############################################
+
 *.enc
 *.encrypted
 
-# SOPS files
-*.sops.yaml
+#############################################
+# SOPS
+#############################################
+
 .sops.yaml
 
-
 #############################################
-# Age Encryption Keys
+# Age Keys
 #############################################
 
 .age/
@@ -50,52 +52,26 @@ join-command.sh
 age.key
 age-keys.txt
 
-
 #############################################
 # Local Configuration
 #############################################
 
-# Local environment overrides
 .env
 .env.*
 *.local
 
-# Installer runtime configs
 config/local.env
 config/runtime.env
-
-# User entered settings
 config/user.yaml
 config/local.yaml
 
-
 #############################################
-# Cluster Inventory Runtime
-#############################################
-
-# Keep templates
-# Ignore generated inventory
-
-cluster/inventory/discovered-nodes.yaml
-cluster/inventory/runtime.yaml
-
-# Node discovery data
-nodes.generated.yaml
-
-
-#############################################
-# SSH / Credentials
+# SSH Keys
 #############################################
 
 .ssh/
-*.pub
 id_rsa
-id_rsa.pub
-
-credentials/
-secrets/
-secret/
-
+id_ed25519
 
 #############################################
 # Logs
@@ -103,7 +79,6 @@ secret/
 
 logs/
 *.log
-
 
 #############################################
 # Temporary Files
@@ -118,14 +93,12 @@ temp/
 *.swp
 *.swo
 
-
 #############################################
-# OS Files
+# Operating System
 #############################################
 
 .DS_Store
 Thumbs.db
-
 
 #############################################
 # Editors
@@ -133,25 +106,7 @@ Thumbs.db
 
 .vscode/
 .idea/
-
 *.code-workspace
-
-
-#############################################
-# Shell History
-#############################################
-
-.bash_history
-.zsh_history
-
-
-#############################################
-# Package Managers
-#############################################
-
-node_modules/
-vendor/
-
 
 #############################################
 # Python
@@ -163,7 +118,6 @@ __pycache__/
 .venv/
 venv/
 
-
 #############################################
 # Terraform
 #############################################
@@ -173,22 +127,19 @@ venv/
 *.tfstate.*
 crash.log
 
-
 #############################################
 # Ansible
 #############################################
 
 *.retry
 
-
 #############################################
-# Images / ISOs / Large Files
+# Large Files
 #############################################
 
 *.iso
 *.img
 *.qcow2
-
 
 #############################################
 # Local Testing
