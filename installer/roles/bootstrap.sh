@@ -7,8 +7,10 @@ set -Eeuo pipefail
 # ROLE BOOTSTRAP
 #############################################
 
-readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-export ROOT_DIR
+if [[ -z "${ROOT_DIR:-}" ]]; then
+    readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+    export ROOT_DIR
+fi
 
 
 #############################################
