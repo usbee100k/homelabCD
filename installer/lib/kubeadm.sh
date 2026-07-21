@@ -25,15 +25,24 @@ install_kubernetes() {
     install -d -m 0755 /etc/apt/keyrings
 
 
+    # Convert Kubernetes version to minor version
+    K8S_MINOR_VERSION=$(echo "${KUBERNETES_VERSION}" | awk -F. '{print $1"."$2}')
+
+
+    rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+
     curl -fsSL \
-        "https://pkgs.k8s.io/core:/stable:/v${KUBERNETES_VERSION}/deb/Release.key" \
+        "https://pkgs.k8s.io/core:/stable:/v${K8S_MINOR_VERSION}/deb/Release.key" \
         | gpg --dearmor \
         -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
 
-    echo \
-"deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${KUBERNETES_VERSION}/deb/ /" \
-        > /etc/apt/sources.list.d/kubernetes.list
+
+    cat > /etc/apt/sources.list.d/kubernetes.list <<EOF
+deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${K8S_MINOR_VERSION}/deb/ /
+EOF
+
 
 
     apt-get update
@@ -57,7 +66,6 @@ install_kubernetes() {
     log_ok "Kubernetes packages installed."
 
 }
-
 
 
 #############################################
