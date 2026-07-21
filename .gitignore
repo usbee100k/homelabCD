@@ -60,10 +60,6 @@ age-keys.txt
 .env.*
 *.local
 
-config/local.env
-config/runtime.env
-config/user.yaml
-config/local.yaml
 
 #############################################
 # SSH Keys
