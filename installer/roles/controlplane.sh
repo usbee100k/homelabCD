@@ -9,7 +9,7 @@ set -Eeuo pipefail
 
 readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 export ROOT_DIR
-
+source "${ROOT_DIR}/config/defaults.env" 2>/dev/null || true
 
 export NODE_ROLE="${NODE_ROLE:-controlplane}"
 export KUBERNETES_VERSION="${KUBERNETES_VERSION:-unknown}"

@@ -5,6 +5,7 @@ CURRENT_STEP=0
 
 STEP_NAME=""
 
+
 next_step() {
 
     CURRENT_STEP=$((CURRENT_STEP+1))
@@ -18,14 +19,15 @@ next_step() {
     echo "============================================================"
     echo
     echo "Hostname      : $(hostname)"
-    echo "Role          : ${NODE_ROLE}"
-    echo "Kubernetes    : ${KUBERNETES_VERSION}"
+    echo "Role          : ${NODE_ROLE:-unknown}"
+    echo "Kubernetes    : ${KUBERNETES_VERSION:-unknown}"
     echo
     echo "Step ${CURRENT_STEP}/${TOTAL_STEPS}"
     echo
     echo ">>> ${STEP_NAME}"
     echo
 }
+
 
 finish_step() {
 
