@@ -38,19 +38,15 @@ install_argocd() {
     # Install / Upgrade
     #############################################
 
-    if helm status argocd -n argocd >/dev/null 2>&1; then
+    helm upgrade --install argocd argo/argo-cd \
+    --namespace argocd \
+    --create-namespace \
+    --set crds.install=true \
+    --timeout 15m \
+    --wait
 
-        log_ok "Argo CD Helm release already exists."
 
-    else
-
-        helm upgrade --install argocd argo/argo-cd \
-            --namespace argocd \
-            --create-namespace \
-            --timeout 15m \
-            --wait
-
-    fi
+log_ok "Argo CD Helm release ready."
 
 
 
@@ -61,10 +57,19 @@ install_argocd() {
     log_info "Waiting for Argo CD CRDs..."
 
 
-    until kubectl get crd applications.argoproj.io >/dev/null 2>&1
-    do
-        sleep 5
-    done
+    log_info "Waiting for Argo CD CRDs..."
+
+kubectl wait \
+    --for=condition=Established \
+    crd/applications.argoproj.io \
+    --timeout=300s
+
+kubectl wait \
+    --for=condition=Established \
+    crd/appprojects.argoproj.io \
+    --timeout=300s
+
+log_ok "Argo CD CRDs ready."
 
 
     until kubectl get crd appprojects.argoproj.io >/dev/null 2>&1
