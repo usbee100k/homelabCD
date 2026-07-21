@@ -89,13 +89,14 @@ done
 # Step 1b — Validate Required Functions
 #############################################
 
+#    setup_bootstrap_ssh 
+#    validate_bootstrap_config 
+
 for fn in \
     validate_system \
     detect_network \
     load_config \
     ask_bootstrap_repo \
-    #setup_bootstrap_ssh 
-    #validate_bootstrap_config 
     main_menu
 do
     require_function "$fn"
