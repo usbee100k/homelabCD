@@ -56,7 +56,7 @@ age-keys.txt
 # Local Configuration
 #############################################
 
-.env
+
 .env.*
 *.local
 
