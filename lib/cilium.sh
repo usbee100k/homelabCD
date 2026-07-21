@@ -60,17 +60,57 @@ install_cilium_cli() {
 
 install_cilium() {
 
-    log_info "Installing Cilium..."
+    log_info "Installing Cilium"
+
 
     local version="${CILIUM_VERSION:-1.18.1}"
 
-    if [[ -z "$version" || "$version" == *latest* ]]; then
-        version="1.18.1"
-    fi
 
     log_info "Using Cilium version: ${version}"
 
-    helm uninstall cilium -n kube-system >/dev/null 2>&1 || true
+
+    #############################################
+    # Cleanup stuck Cilium namespaces
+    #############################################
+
+    if kubectl get namespace cilium-secrets >/dev/null 2>&1; then
+
+        STATUS=$(kubectl get namespace cilium-secrets \
+            -o jsonpath='{.status.phase}')
+
+        if [[ "${STATUS}" == "Terminating" ]]; then
+
+            log_warn "Removing stuck cilium-secrets namespace"
+
+            kubectl get namespace cilium-secrets \
+                -o json \
+                | jq '.spec.finalizers=[]' \
+                | kubectl replace --raw \
+                "/api/v1/namespaces/cilium-secrets/finalize" \
+                -f -
+
+        fi
+
+    fi
+
+
+
+    #############################################
+    # Skip if already installed
+    #############################################
+
+    if kubectl get daemonset cilium -n kube-system >/dev/null 2>&1; then
+
+        log_ok "Cilium already installed. Skipping."
+        return 0
+
+    fi
+
+
+
+    #############################################
+    # Install Cilium
+    #############################################
 
     cilium install \
         --version "${version}" \
@@ -84,10 +124,10 @@ install_cilium() {
         --set rollOutCiliumPods=true \
         --wait
 
-    log_ok "Cilium deployed."
+
+    log_ok "Cilium installed."
 
 }
-
 #############################################
 # Wait for Cilium
 #############################################
