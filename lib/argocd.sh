@@ -48,7 +48,8 @@ install_argocd() {
 
     helm upgrade --install argocd argo/argo-cd \
         --namespace argocd \
-        --timeout 10m
+        --timeout 10m \
+        --create-namespace
 
 
 
@@ -62,9 +63,17 @@ install_argocd() {
 # WAIT FOR ARGO CD
 #############################################
 
+
 wait_for_argocd() {
 
     log_info "Waiting for Argo CD..."
+
+
+    kubectl wait \
+        --namespace argocd \
+        --for=create deployment/argocd-server \
+        --timeout=300s
+
 
 
     kubectl wait \
@@ -79,14 +88,6 @@ wait_for_argocd() {
         --namespace argocd \
         --for=condition=Available \
         deployment/argocd-repo-server \
-        --timeout=300s
-
-
-
-    kubectl wait \
-        --namespace argocd \
-        --for=condition=Available \
-        deployment/argocd-application-controller \
         --timeout=300s
 
 
