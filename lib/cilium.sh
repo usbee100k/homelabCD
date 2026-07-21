@@ -62,33 +62,24 @@ install_cilium() {
 
     log_info "Installing Cilium..."
 
+    local version="${CILIUM_VERSION:-1.18.1}"
 
-    # Default Cilium Helm version
-    if [[ -z "${CILIUM_VERSION:-}" ]]; then
-        CILIUM_VERSION="1.18.1"
-    fi
-
-
-    # Remove bad values
-    if [[ "${CILIUM_VERSION}" == "latest" || "${CILIUM_VERSION}" == *"latest"* ]]; then
-        CILIUM_VERSION="1.18.1"
-    fi
-
-
-    log_info "Using Cilium version: ${CILIUM_VERSION}"
-
+    helm uninstall cilium -n kube-system >/dev/null 2>&1 || true
 
     cilium install \
-        --version "${CILIUM_VERSION}" \
+        --version "${version}" \
         --set kubeProxyReplacement=true \
         --set k8sServiceHost="${VIP_ADDRESS}" \
-        --set k8sServicePort=6443
-
+        --set k8sServicePort=6443 \
+        --set ipam.mode=kubernetes \
+        --set routingMode=native \
+        --set autoDirectNodeRoutes=true \
+        --set rollOutCiliumPods=true \
+        --wait
 
     log_ok "Cilium deployed."
 
 }
-
 
 
 #############################################
