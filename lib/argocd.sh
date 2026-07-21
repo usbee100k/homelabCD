@@ -42,7 +42,8 @@ install_argocd() {
     --namespace argocd \
     --create-namespace \
     --set crds.install=true \
-    --timeout 15m 
+    --timeout 15m \ 
+    --no-hook
 
 
 log_ok "Argo CD Helm release ready."
