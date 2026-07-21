@@ -205,6 +205,8 @@ bootstrap_cluster() {
 
     wait_for_cilium
 
+    untaint_controlplane
+
 
     finish_step
 

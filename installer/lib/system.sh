@@ -217,6 +217,18 @@ log_ok "Cluster initialized."
 
 }
 
+untaint_controlplane() {
+
+    log_info "Allowing workloads on the control-plane node..."
+
+    kubectl taint nodes "$(hostname)" \
+        node-role.kubernetes.io/control-plane- \
+        >/dev/null 2>&1 || true
+
+    log_ok "Control-plane taint removed."
+
+}
+
 configure_kubectl() {
 
     log_info "Configuring kubectl..."
