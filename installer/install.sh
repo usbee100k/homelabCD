@@ -55,6 +55,7 @@ LIBRARIES=(
     common
     progress
     bootstrap-repo
+    bootstrap-auth
     secrets
     inventory
     node-labels
