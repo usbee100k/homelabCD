@@ -38,11 +38,19 @@ install_argocd() {
     # Install / Upgrade
     #############################################
 
+     if helm status argocd -n argocd >/dev/null 2>&1; then
+
+        log_ok "Argo CD Helm release already exists."
+        return 0
+
+    fi
+
+
     helm upgrade --install argocd argo/argo-cd \
-    --namespace argocd \
-    --create-namespace \
-    --set crds.install=true \
-    --timeout 15m 
+        --namespace argocd \
+        --create-namespace \
+        --set crds.install=true \
+        --timeout 15m
 
 
 log_ok "Argo CD Helm release ready."
