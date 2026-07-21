@@ -6,6 +6,7 @@
 
 system_information() {
 
+    local hostname
     HOSTNAME=$(hostname)
     IP=$(hostname -I | awk '{print $1}')
     CPU=$(nproc)
@@ -38,6 +39,48 @@ show_summary() {
 
 }
 
+
+
+validate_system() {
+
+    log_info "Validating system..."
+
+    [[ $EUID -eq 0 ]] || {
+        log_error "Installer must be run as root."
+        return 1
+    }
+
+    command -v apt-get >/dev/null || {
+        log_error "apt-get not found."
+        return 1
+    }
+
+    local cmds=(
+        curl
+        git
+        jq
+        awk
+        sed
+        grep
+        systemctl
+        ip
+    )
+
+    for cmd in "${cmds[@]}"; do
+        command -v "$cmd" >/dev/null || {
+            log_error "Missing dependency: $cmd"
+            return 1
+        }
+    done
+
+    if swapon --show | grep -q .; then
+        log_warn "Swap is enabled."
+    fi
+
+    log_ok "System validation passed."
+
+}
+
 #############################################
 # System Preparation
 #############################################
@@ -63,8 +106,7 @@ install_prerequisites() {
         curl \
         wget \
         sops \
-        age\
-        git\
+        age \
         gpg \
         yq \
         jq \
