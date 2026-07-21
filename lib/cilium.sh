@@ -64,6 +64,13 @@ install_cilium() {
 
     local version="${CILIUM_VERSION:-1.18.1}"
 
+    # Fallback if version is invalid
+    if [[ -z "$version" || "$version" == *latest* ]]; then
+        version="1.18.1"
+    fi
+
+    log_info "Using Cilium version: ${version}"
+
     helm uninstall cilium -n kube-system >/dev/null 2>&1 || true
 
     cilium install \
@@ -80,7 +87,6 @@ install_cilium() {
     log_ok "Cilium deployed."
 
 }
-
 
 #############################################
 # Wait for Cilium
