@@ -74,13 +74,31 @@ EOF
 
 kubeadm_init() {
 
-
     log_info "Running kubeadm init"
 
+
+    #############################################
+    # Check if Kubernetes is already initialized
+    #############################################
+
+    if [[ -f /etc/kubernetes/admin.conf ]] && \
+       [[ -f /etc/kubernetes/manifests/kube-apiserver.yaml ]]; then
+
+        log_ok "Kubernetes control plane already exists. Skipping kubeadm init."
+        return 0
+
+    fi
+
+
+
+    #############################################
+    # Initialize new cluster
+    #############################################
 
     kubeadm init \
         --config "${ROOT_DIR}/generated/kubeadm-config.yaml" \
         --upload-certs
+
 
 
     log_ok "Kubernetes control plane initialized."

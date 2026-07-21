@@ -27,6 +27,7 @@ install_argocd() {
         --install argocd \
         argo/argo-cd \
         --namespace argocd \
+        --timeout 10m \
         --wait
 
     log_info "Waiting for Argo CD API..."
