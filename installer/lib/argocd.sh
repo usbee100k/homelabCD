@@ -41,6 +41,42 @@ install_argocd() {
 
 }
 
+generate_argocd_ssh_key() {
+
+    log_info "Checking Argo CD SSH deploy key"
+
+
+    SSH_KEY_PATH="/etc/kubernetes/argocd/id_ed25519"
+
+    export SSH_KEY_PATH
+
+
+    mkdir -p /etc/kubernetes/argocd
+
+
+    if [[ -f "${SSH_KEY_PATH}" ]]; then
+
+        log_ok "Argo CD SSH key already exists."
+
+        return
+
+    fi
+
+
+    ssh-keygen \
+        -t ed25519 \
+        -N "" \
+        -f "${SSH_KEY_PATH}" \
+        -C "argocd@${CLUSTER_NAME}"
+
+
+    chmod 600 "${SSH_KEY_PATH}"
+
+
+    log_ok "Argo CD SSH key generated."
+
+}
+
 
 
 #############################################

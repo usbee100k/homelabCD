@@ -168,6 +168,8 @@ bootstrap_cluster() {
 
     next_step "Connecting GitHub GitOps Repository"
 
+    generate_argocd_ssh_key
+
     configure_argocd_repository
 
     bootstrap_gitops
