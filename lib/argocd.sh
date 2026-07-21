@@ -1,4 +1,4 @@
-##!/usr/bin/env bash
+#!/usr/bin/env bash
 
 set -Eeuo pipefail
 
@@ -13,18 +13,6 @@ install_argocd() {
 
 
     #############################################
-    # Skip existing install
-    #############################################
-
-    if helm status argocd -n argocd >/dev/null 2>&1; then
-
-        log_ok "Argo CD already installed. Skipping."
-        return 0
-
-    fi
-
-
-    #############################################
     # Namespace
     #############################################
 
@@ -35,7 +23,7 @@ install_argocd() {
 
 
     #############################################
-    # Helm
+    # Helm Repository
     #############################################
 
     helm repo add argo https://argoproj.github.io/argo-helm \
@@ -46,16 +34,46 @@ install_argocd() {
 
 
 
-    helm upgrade --install argocd argo/argo-cd \
-        --namespace argocd \
-        --timeout 10m \
-        --create-namespace \
-        --no-hooks \
-        --wait
+    #############################################
+    # Install / Upgrade
+    #############################################
+
+    if helm status argocd -n argocd >/dev/null 2>&1; then
+
+        log_ok "Argo CD Helm release already exists."
+
+    else
+
+        helm upgrade --install argocd argo/argo-cd \
+            --namespace argocd \
+            --create-namespace \
+            --timeout 15m \
+            --wait
+
+    fi
 
 
 
-    log_ok "Argo CD deployed."
+    #############################################
+    # Wait for CRDs
+    #############################################
+
+    log_info "Waiting for Argo CD CRDs..."
+
+
+    until kubectl get crd applications.argoproj.io >/dev/null 2>&1
+    do
+        sleep 5
+    done
+
+
+    until kubectl get crd appprojects.argoproj.io >/dev/null 2>&1
+    do
+        sleep 5
+    done
+
+
+    log_ok "Argo CD CRDs installed."
 
 }
 
@@ -65,16 +83,15 @@ install_argocd() {
 # WAIT FOR ARGO CD
 #############################################
 
-
 wait_for_argocd() {
 
-    log_info "Waiting for Argo CD..."
+    log_info "Waiting for Argo CD deployments..."
 
 
     kubectl wait \
         --namespace argocd \
         --for=create deployment/argocd-server \
-        --timeout=300s
+        --timeout=600s
 
 
 
@@ -82,7 +99,7 @@ wait_for_argocd() {
         --namespace argocd \
         --for=condition=Available \
         deployment/argocd-server \
-        --timeout=300s
+        --timeout=600s
 
 
 
@@ -90,7 +107,15 @@ wait_for_argocd() {
         --namespace argocd \
         --for=condition=Available \
         deployment/argocd-repo-server \
-        --timeout=300s
+        --timeout=600s
+
+
+
+    kubectl wait \
+        --namespace argocd \
+        --for=condition=Available \
+        deployment/argocd-application-controller \
+        --timeout=600s
 
 
 

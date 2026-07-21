@@ -162,6 +162,7 @@ bootstrap_cluster() {
 
     install_argocd
 
+    wait_for_argocd
 
     generate_argocd_ssh_key
 
