@@ -94,8 +94,8 @@ for fn in \
     detect_network \
     load_config \
     ask_bootstrap_repo \
-    setup_bootstrap_ssh \
-    validate_bootstrap_config \
+    #setup_bootstrap_ssh 
+    #validate_bootstrap_config 
     main_menu
 do
     require_function "$fn"
