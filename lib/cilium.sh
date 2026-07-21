@@ -64,7 +64,6 @@ install_cilium() {
 
     local version="${CILIUM_VERSION:-1.18.1}"
 
-    # Fallback if version is invalid
     if [[ -z "$version" || "$version" == *latest* ]]; then
         version="1.18.1"
     fi
@@ -80,6 +79,7 @@ install_cilium() {
         --set k8sServicePort=6443 \
         --set ipam.mode=kubernetes \
         --set routingMode=native \
+        --set ipv4NativeRoutingCIDR="${POD_SUBNET}" \
         --set autoDirectNodeRoutes=true \
         --set rollOutCiliumPods=true \
         --wait
