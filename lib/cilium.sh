@@ -131,17 +131,16 @@ install_cilium() {
     # Install Cilium
     #############################################
 
-    cilium install \
+  cilium install \
         --version "${version}" \
         --set kubeProxyReplacement=true \
         --set k8sServiceHost="${VIP_ADDRESS}" \
         --set k8sServicePort=6443 \
         --set ipam.mode=kubernetes \
-        --set routingMode=native \
-        --set ipv4NativeRoutingCIDR="${POD_SUBNET}" \
-        --set autoDirectNodeRoutes=true \
-        --set rollOutCiliumPods=true \
-        --wait
+        --set routingMode=tunnel \
+        --set tunnelProtocol=vxlan \
+        --set autoDirectNodeRoutes=false \
+        --set rollOutCiliumPods=true
 
 
     log_ok "Cilium installed."
