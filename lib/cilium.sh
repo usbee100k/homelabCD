@@ -134,7 +134,7 @@ install_cilium() {
   cilium install \
         --version "${version}" \
         --set kubeProxyReplacement=true \
-        --set k8sServiceHost="${VIP_ADDRESS}" \
+        --set k8sServiceHost="${LOCAL_IP}" \
         --set k8sServicePort=6443 \
         --set ipam.mode=kubernetes \
         --set routingMode=tunnel \
