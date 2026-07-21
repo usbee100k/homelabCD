@@ -147,3 +147,20 @@ install_cilium() {
     log_ok "Cilium installed."
 
 }
+
+
+#############################################
+# Wait for Cilium
+#############################################
+
+wait_for_cilium() {
+
+    log_info "Waiting for Cilium..."
+
+
+    cilium status --wait
+
+
+    log_ok "Cilium Ready."
+
+}
