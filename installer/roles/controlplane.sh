@@ -11,6 +11,10 @@ readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 export ROOT_DIR
 
 
+export NODE_ROLE="${NODE_ROLE:-controlplane}"
+export KUBERNETES_VERSION="${KUBERNETES_VERSION:-unknown}"
+
+
 #############################################
 # Load Required Libraries
 #############################################
@@ -19,27 +23,23 @@ LIBRARIES=(
     logging
     common
     progress
+    inventory
+    node-labels
+    hardware-labels
+    validation
     system
     networking
     containerd
     kubeadm
     kubeadm-config
     bootstrap-download
-    node-labels
-    hardware-labels
     health
 )
 
 
 for lib in "${LIBRARIES[@]}"; do
 
-    if [[ -f "${ROOT_DIR}/lib/${lib}.sh" ]]; then
-        # shellcheck disable=SC1090
-        source "${ROOT_DIR}/lib/${lib}.sh"
-    else
-        echo "[ERROR] Missing library: ${lib}.sh"
-        exit 1
-    fi
+    source "${ROOT_DIR}/lib/${lib}.sh"
 
 done
 
@@ -51,7 +51,7 @@ done
 join_controlplane()
 {
 
-    header "Additional Control Plane Join"
+    next_step "Additional Control Plane Join"
 
 
     log_info "Joining additional control plane node"
