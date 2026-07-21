@@ -49,7 +49,9 @@ install_argocd() {
     helm upgrade --install argocd argo/argo-cd \
         --namespace argocd \
         --timeout 10m \
-        --create-namespace
+        --create-namespace \
+        --no-hooks \
+        --wait
 
 
 
