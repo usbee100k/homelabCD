@@ -4,14 +4,72 @@ set -Eeuo pipefail
 
 
 #############################################
+# ROLE BOOTSTRAP
+#############################################
+
+readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+export ROOT_DIR
+
+
+#############################################
+# Load Configuration
+#############################################
+
+source "${ROOT_DIR}/config/defaults.env" 2>/dev/null || true
+
+
+export NODE_ROLE="${NODE_ROLE:-controlplane}"
+export KUBERNETES_VERSION="${KUBERNETES_VERSION:-unknown}"
+
+
+#############################################
+# Load Required Libraries
+#############################################
+
+LIBRARIES=(
+    logging
+    common
+    progress
+    validation
+    system
+    networking
+    containerd
+    kubevip
+    kubeadm
+    kubeadm-config
+    helm
+    cilium
+    argocd
+    inventory
+    node-labels
+    hardware-labels
+    bootstrap-secrets
+    bootstrap-upload
+    bootstrap-download
+    secrets
+    health
+)
+
+
+for lib in "${LIBRARIES[@]}"; do
+
+    if [[ -f "${ROOT_DIR}/lib/${lib}.sh" ]]; then
+        # shellcheck disable=SC1090
+        source "${ROOT_DIR}/lib/${lib}.sh"
+    else
+        echo "[ERROR] Missing library: ${lib}.sh"
+        exit 1
+    fi
+
+done
+
+
+
+#############################################
 # FIRST CONTROL PLANE BOOTSTRAP
 #############################################
 
-
 bootstrap_cluster() {
-
-
-    header
 
 
     log_info "Starting Kubernetes cluster bootstrap"
@@ -182,9 +240,7 @@ bootstrap_cluster() {
     next_step "Generating Cluster Join Credentials"
 
 
-
     generate_join_commands
-
 
 
     finish_step
@@ -198,13 +254,10 @@ bootstrap_cluster() {
     next_step "Creating Encrypted Bootstrap Package"
 
 
-
     create_bootstrap_package
 
 
-
     upload_bootstrap_package
-
 
 
     finish_step
@@ -218,17 +271,13 @@ bootstrap_cluster() {
     next_step "Registering Primary Node"
 
 
-
     register_node
-
 
 
     apply_node_labels
 
 
-
     detect_special_hardware
-
 
 
     finish_step
@@ -242,12 +291,10 @@ bootstrap_cluster() {
     next_step "Cluster Validation"
 
 
-
     kubectl get nodes
 
 
     kubectl get pods -A
-
 
 
     finish_step
@@ -258,31 +305,18 @@ bootstrap_cluster() {
     # COMPLETE
     #########################################
 
-
-    header
-
-
     log_ok "Kubernetes Cluster Bootstrap Complete"
 
 
     echo
-
     echo "Bootstrap Complete"
-
     echo
-
     echo "Private repository updated with:"
-
     echo
-
     echo " ├── encrypted worker join"
-
     echo " ├── encrypted control plane join"
-
     echo " └── cluster inventory"
-
     echo
-
 
 }
 
