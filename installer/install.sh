@@ -47,76 +47,7 @@ require_function() {
 }
 
 #############################################
-# Root Check
-#############################################
-
-(( EUID == 0 )) || die "Please run this installer as root."
-
-#############################################
-# Required Commands
-#############################################
-
-for cmd in \
-    bash \
-    curl \
-    git \
-    jq \
-    sed \
-    awk \
-    grep \
-    ip \
-    systemctl
-do
-    require_command "$cmd"
-done
-
-#############################################
-# Configuration
-#############################################
-
-mkdir -p "${ROOT_DIR}/config"
-
-if [[ ! -f "${ROOT_DIR}/config/defaults.env" ]]; then
-
-    if [[ -f "${ROOT_DIR}/config/defaults.example.env" ]]; then
-
-        cp \
-            "${ROOT_DIR}/config/defaults.example.env" \
-            "${ROOT_DIR}/config/defaults.env"
-
-        echo "Created config/defaults.env"
-
-    else
-
-cat > "${ROOT_DIR}/config/defaults.env" <<'EOF'
-#!/usr/bin/env bash
-
-CLUSTER_NAME="homelab"
-GITHUB_REPO=""
-BOOTSTRAP_REPO=""
-GIT_BRANCH="main"
-KUBERNETES_VERSION="v1.36.2"
-EOF
-
-        chmod 644 "${ROOT_DIR}/config/defaults.env"
-
-        echo "Created default configuration."
-
-    fi
-
-fi
-
-#############################################
-# Load Configuration
-#############################################
-
-source_required "${ROOT_DIR}/config/defaults.env"
-source_optional "${ROOT_DIR}/config/versions.env"
-source_optional "${ROOT_DIR}/config/bootstrap.env"
-source_optional "${ROOT_DIR}/config/encryption.env"
-
-#############################################
-# Load Libraries
+# Step 1 — Load Libraries
 #############################################
 
 LIBRARIES=(
@@ -154,30 +85,104 @@ for lib in "${LIBRARIES[@]}"; do
 done
 
 #############################################
-# Validate Required Functions
+# Step 1b — Validate Required Functions
 #############################################
 
 for fn in \
+    validate_system \
+    detect_network \
     load_config \
     ask_github_repo \
     ask_bootstrap_repo \
     validate_github_access \
     validate_bootstrap_access \
-    validate_system \
-    detect_network \
     main_menu
 do
     require_function "$fn"
 done
 
 #############################################
-# Load Cluster Configuration
+# Step 2 — Validate the Host
 #############################################
+
+(( EUID == 0 )) || die "Please run this installer as root."
+
+validate_system
+detect_network
+
+#############################################
+# Step 3 — Install Prerequisites
+#############################################
+
+# Minimal bootstrap commands the installer itself needs to run.
+for cmd in \
+    bash \
+    curl \
+    git \
+    jq \
+    sed \
+    awk \
+    grep \
+    ip \
+    systemctl
+do
+    require_command "$cmd"
+done
+
+# yq is required for configuration loading in Step 4.
+if ! command -v yq >/dev/null 2>&1; then
+    echo "Installing yq..."
+    curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" \
+        -o /usr/local/bin/yq
+    chmod +x /usr/local/bin/yq
+fi
+require_command yq
+
+#############################################
+# Step 4 — Load Configuration
+#############################################
+
+mkdir -p "${ROOT_DIR}/config"
+
+if [[ ! -f "${ROOT_DIR}/config/defaults.env" ]]; then
+
+    if [[ -f "${ROOT_DIR}/config/defaults.example.env" ]]; then
+
+        cp \
+            "${ROOT_DIR}/config/defaults.example.env" \
+            "${ROOT_DIR}/config/defaults.env"
+
+        echo "Created config/defaults.env"
+
+    else
+
+cat > "${ROOT_DIR}/config/defaults.env" <<'EOF'
+#!/usr/bin/env bash
+
+CLUSTER_NAME="homelab"
+GITHUB_REPO=""
+BOOTSTRAP_REPO=""
+GIT_BRANCH="main"
+KUBERNETES_VERSION="v1.36.2"
+EOF
+
+        chmod 644 "${ROOT_DIR}/config/defaults.env"
+
+        echo "Created default configuration."
+
+    fi
+
+fi
+
+source_required "${ROOT_DIR}/config/defaults.env"
+source_optional "${ROOT_DIR}/config/versions.env"
+source_optional "${ROOT_DIR}/config/bootstrap.env"
+source_optional "${ROOT_DIR}/config/encryption.env"
 
 load_config
 
 #############################################
-# GitHub Configuration
+# Step 5 — Continue with Kubernetes Setup
 #############################################
 
 ask_github_repo
@@ -185,13 +190,6 @@ ask_bootstrap_repo
 
 validate_github_access
 validate_bootstrap_access
-
-#############################################
-# System Validation
-#############################################
-
-validate_system
-detect_network
 
 #############################################
 # Launch Installer
