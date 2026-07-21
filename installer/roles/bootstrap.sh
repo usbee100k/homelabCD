@@ -295,7 +295,8 @@ bootstrap_cluster() {
 
     next_step "Cluster Validation"
 
-
+    kubectl cluster-info
+    
     kubectl get nodes
 
 

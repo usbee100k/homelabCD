@@ -219,34 +219,32 @@ log_ok "Cluster initialized."
 
 configure_kubectl() {
 
-mkdir -p "$HOME/.kube"
+    log_info "Configuring kubectl..."
 
-cp /etc/kubernetes/admin.conf "$HOME/.kube/config"
+    local TARGET_USER
+    local TARGET_HOME
 
-chown $(id -u):$(id -g) "$HOME/.kube/config"
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+        TARGET_USER="${SUDO_USER}"
+        TARGET_HOME="$(getent passwd "${TARGET_USER}" | cut -d: -f6)"
+    else
+        TARGET_USER="$(id -un)"
+        TARGET_HOME="$HOME"
+    fi
 
-log_ok "kubectl configured."
+    mkdir -p "${TARGET_HOME}/.kube"
+
+    cp /etc/kubernetes/admin.conf \
+        "${TARGET_HOME}/.kube/config"
+
+    chown -R "${TARGET_USER}:${TARGET_USER}" \
+        "${TARGET_HOME}/.kube"
+
+    chmod 700 "${TARGET_HOME}/.kube"
+    chmod 600 "${TARGET_HOME}/.kube/config"
+
+    export KUBECONFIG="${TARGET_HOME}/.kube/config"
+
+    log_ok "kubectl configured for ${TARGET_USER}."
 
 }
-
-generate_join_commands() {
-
-mkdir -p generated
-
-kubeadm token create --print-join-command \
-    >generated/worker-join.sh
-
-CERT_KEY=$(kubeadm init phase upload-certs --upload-certs | tail -1)
-
-cat >generated/controlplane-join.sh <<EOF
-$(cat generated/worker-join.sh) \
---control-plane \
---certificate-key ${CERT_KEY}
-EOF
-
-chmod +x generated/*.sh
-
-log_ok "Join commands saved."
-
-}
-
