@@ -93,10 +93,8 @@ for fn in \
     validate_system \
     detect_network \
     load_config \
-    ask_github_repo \
     ask_bootstrap_repo \
-    validate_github_access \
-    validate_bootstrap_access \
+    validate_bootstrap_config \
     main_menu
 do
     require_function "$fn"
@@ -186,11 +184,9 @@ load_config
 # Step 5 — Continue with Kubernetes Setup
 #############################################
 
-ask_github_repo
 ask_bootstrap_repo
 
-validate_github_access
-validate_bootstrap_access
+validate_bootstrap_config
 
 #############################################
 # Launch Installer

@@ -8,11 +8,10 @@ set -Eeuo pipefail
 #############################################
 
 
-install_argocd() {
-
+install_argocd()
+{
 
     log_info "Installing Argo CD"
-
 
 
     kubectl create namespace argocd \
@@ -20,16 +19,13 @@ install_argocd() {
         -o yaml | kubectl apply -f -
 
 
-
     helm repo add argo \
         https://argoproj.github.io/argo-helm \
         >/dev/null 2>&1
 
 
-
     helm repo update \
         >/dev/null 2>&1
-
 
 
     helm upgrade \
@@ -40,9 +36,7 @@ install_argocd() {
         --wait
 
 
-
-    log_info "Waiting for Argo CD API..."
-
+    log_info "Waiting for Argo CD API"
 
 
     kubectl wait \
@@ -52,8 +46,47 @@ install_argocd() {
         --timeout=300s
 
 
+    log_ok "Argo CD Installed"
 
-    log_ok "Argo CD Installed."
+}
+
+
+
+#############################################
+# ARGO CD PRIVATE REPOSITORY
+#############################################
+
+
+configure_argocd_repository()
+{
+
+    log_info "Configuring Argo CD private repository"
+
+
+    local repo_url
+
+    repo_url="$(_bootstrap_ssh_url)"
+
+
+    kubectl create secret generic bootstrap-repository \
+        -n argocd \
+        --from-literal=type=git \
+        --from-literal=url="${repo_url}" \
+        --from-file=sshPrivateKey="${SSH_KEY_PATH}" \
+        --dry-run=client \
+        -o yaml \
+        | kubectl apply -f -
+
+
+
+    kubectl label secret bootstrap-repository \
+        -n argocd \
+        argocd.argoproj.io/secret-type=repository \
+        --overwrite
+
+
+
+    log_ok "Argo CD repository configured"
 
 }
 
@@ -64,26 +97,15 @@ install_argocd() {
 #############################################
 
 
-bootstrap_gitops() {
-
+bootstrap_gitops()
+{
 
     log_info "Bootstrapping GitOps"
 
 
+    [[ -n "${BOOTSTRAP_REPO:-}" ]] || \
+        die "BOOTSTRAP_REPO missing"
 
-    if [[ -z "${GITHUB_REPO:-}" ]]; then
-
-        log_error "GITHUB_REPO is missing."
-
-        exit 1
-
-    fi
-
-
-
-    #########################################
-    # Create Argo Project
-    #########################################
 
 
     kubectl apply \
@@ -91,17 +113,12 @@ bootstrap_gitops() {
 
 
 
-    #########################################
-    # Configure Root Application
-    #########################################
-
-
     mkdir -p "${ROOT_DIR}/generated"
 
 
 
     sed \
-    -e "s|REPLACE_REPO_URL|${GITHUB_REPO}|g" \
+    -e "s|REPLACE_REPO_URL|${BOOTSTRAP_REPO}|g" \
     -e "s|REPLACE_BRANCH|${GIT_BRANCH:-main}|g" \
     "${ROOT_DIR}/bootstrap/root-app.yaml" \
     > "${ROOT_DIR}/generated/root-app.yaml"
@@ -113,6 +130,6 @@ bootstrap_gitops() {
 
 
 
-    log_ok "GitOps Repository Connected."
+    log_ok "GitOps bootstrap complete"
 
 }
