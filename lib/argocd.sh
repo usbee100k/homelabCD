@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+##!/usr/bin/env bash
 
 set -Eeuo pipefail
 
@@ -7,61 +7,123 @@ set -Eeuo pipefail
 # ARGO CD INSTALLATION
 #############################################
 
-
 install_argocd() {
 
     log_info "Installing Argo CD"
+
+
+    #############################################
+    # Skip existing install
+    #############################################
+
+    if helm status argocd -n argocd >/dev/null 2>&1; then
+
+        log_ok "Argo CD already installed. Skipping."
+        return 0
+
+    fi
+
+
+    #############################################
+    # Namespace
+    #############################################
 
     kubectl create namespace argocd \
         --dry-run=client \
         -o yaml | kubectl apply -f -
 
-    helm repo add argo \
-        https://argoproj.github.io/argo-helm \
-        >/dev/null 2>&1
 
-    helm repo update \
-        >/dev/null 2>&1
 
-    helm upgrade \
-        --install argocd \
-        argo/argo-cd \
+    #############################################
+    # Helm
+    #############################################
+
+    helm repo add argo https://argoproj.github.io/argo-helm \
+        >/dev/null 2>&1 || true
+
+
+    helm repo update
+
+
+
+    helm upgrade --install argocd argo/argo-cd \
         --namespace argocd \
-        --timeout 10m \
-        --wait
+        --timeout 10m
 
-    log_info "Waiting for Argo CD API..."
 
-    kubectl wait \
-        --for=condition=available \
-        deployment/argocd-server \
-        -n argocd \
-        --timeout=300s
 
-    log_ok "Argo CD Installed."
+    log_ok "Argo CD deployed."
 
 }
+
+
+
+#############################################
+# WAIT FOR ARGO CD
+#############################################
+
+wait_for_argocd() {
+
+    log_info "Waiting for Argo CD..."
+
+
+    kubectl wait \
+        --namespace argocd \
+        --for=condition=Available \
+        deployment/argocd-server \
+        --timeout=300s
+
+
+
+    kubectl wait \
+        --namespace argocd \
+        --for=condition=Available \
+        deployment/argocd-repo-server \
+        --timeout=300s
+
+
+
+    kubectl wait \
+        --namespace argocd \
+        --for=condition=Available \
+        deployment/argocd-application-controller \
+        --timeout=300s
+
+
+
+    log_ok "Argo CD Ready."
+
+}
+
+
+
+
+#############################################
+# SSH KEY
+#############################################
 
 generate_argocd_ssh_key() {
 
     log_info "Checking Argo CD SSH deploy key"
 
 
-    SSH_KEY_PATH="/etc/kubernetes/argocd/id_ed25519"
+    SSH_KEY_PATH="${SSH_KEY_PATH:-/etc/kubernetes/argocd/id_ed25519}"
+
 
     export SSH_KEY_PATH
 
 
-    mkdir -p /etc/kubernetes/argocd
+    mkdir -p "$(dirname "${SSH_KEY_PATH}")"
+
 
 
     if [[ -f "${SSH_KEY_PATH}" ]]; then
 
         log_ok "Argo CD SSH key already exists."
-
-        return
+        return 0
 
     fi
+
 
 
     ssh-keygen \
@@ -71,7 +133,9 @@ generate_argocd_ssh_key() {
         -C "argocd@${CLUSTER_NAME}"
 
 
+
     chmod 600 "${SSH_KEY_PATH}"
+
 
 
     log_ok "Argo CD SSH key generated."
@@ -80,13 +144,12 @@ generate_argocd_ssh_key() {
 
 
 
+
 #############################################
-# ARGO CD PRIVATE REPOSITORY
+# ARGO CD REPOSITORY
 #############################################
 
-
-configure_argocd_repository()
-{
+configure_argocd_repository() {
 
     log_info "Configuring Argo CD private repository"
 
@@ -95,9 +158,14 @@ configure_argocd_repository()
 
     repo_url="${GITHUB_REPO}"
 
+
+
     if [[ "${repo_url}" == https://github.com/* ]]; then
+
         repo_url="${repo_url/https:\/\/github.com\//git@github.com:}"
+
     fi
+
 
 
     kubectl create secret generic bootstrap-repository \
@@ -118,9 +186,10 @@ configure_argocd_repository()
 
 
 
-    log_ok "Argo CD repository configured"
+    log_ok "Argo CD repository configured."
 
 }
+
 
 
 
@@ -128,20 +197,30 @@ configure_argocd_repository()
 # GITOPS BOOTSTRAP
 #############################################
 
-
 bootstrap_gitops() {
 
+
     log_info "Bootstrapping GitOps"
+
+
 
     [[ -n "${GITHUB_REPO:-}" ]] || \
         die "GITHUB_REPO missing"
 
+
+
     configure_argocd_repository
+
+
 
     kubectl apply \
         -f "${ROOT_DIR}/bootstrap/projects/default-project.yaml"
 
+
+
     mkdir -p "${ROOT_DIR}/generated"
+
+
 
     sed \
         -e "s|REPLACE_REPO_URL|${GITHUB_REPO}|g" \
@@ -149,8 +228,12 @@ bootstrap_gitops() {
         "${ROOT_DIR}/bootstrap/root-app.yaml" \
         > "${ROOT_DIR}/generated/root-app.yaml"
 
+
+
     kubectl apply \
         -f "${ROOT_DIR}/generated/root-app.yaml"
+
+
 
     log_ok "GitOps bootstrap complete."
 
