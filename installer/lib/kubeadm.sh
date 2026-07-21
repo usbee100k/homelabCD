@@ -1,41 +1,68 @@
 #!/usr/bin/env bash
 
-generate_kubeadm_config() {
+set -Eeuo pipefail
 
-log_info "Generating kubeadm configuration..."
 
-cat >/tmp/kubeadm-config.yaml <<EOF
-apiVersion: kubeadm.k8s.io/v1beta4
-kind: InitConfiguration
+#############################################
+# Install Kubernetes Packages
+#############################################
 
-localAPIEndpoint:
-  advertiseAddress: ${LOCAL_IP}
-  bindPort: 6443
+install_kubernetes() {
 
-nodeRegistration:
-  criSocket: unix:///run/containerd/containerd.sock
+    log_info "Installing Kubernetes packages"
 
----
 
-apiVersion: kubeadm.k8s.io/v1beta4
-kind: ClusterConfiguration
+    apt-get update
 
-clusterName: ${CLUSTER_NAME}
 
-kubernetesVersion: v${KUBERNETES_VERSION}
+    apt-get install -y \
+        apt-transport-https \
+        ca-certificates \
+        curl \
+        gpg
 
-controlPlaneEndpoint: "${VIP_ADDRESS}:6443"
 
-networking:
-  podSubnet: ${POD_SUBNET}
-  serviceSubnet: ${SERVICE_SUBNET}
-  dnsDomain: ${DNS_DOMAIN}
+    install -d -m 0755 /etc/apt/keyrings
 
-EOF
 
-log_ok "kubeadm configuration created."
+    curl -fsSL \
+        "https://pkgs.k8s.io/core:/stable:/v${KUBERNETES_VERSION}/deb/Release.key" \
+        | gpg --dearmor \
+        -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+
+    echo \
+"deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${KUBERNETES_VERSION}/deb/ /" \
+        > /etc/apt/sources.list.d/kubernetes.list
+
+
+    apt-get update
+
+
+    apt-get install -y \
+        kubelet \
+        kubeadm \
+        kubectl
+
+
+    apt-mark hold \
+        kubelet \
+        kubeadm \
+        kubectl
+
+
+    systemctl enable kubelet
+
+
+    log_ok "Kubernetes packages installed."
 
 }
+
+
+
+#############################################
+# Initialize Kubernetes Control Plane
+#############################################
 
 kubeadm_init() {
 
