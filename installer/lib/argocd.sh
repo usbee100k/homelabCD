@@ -8,36 +8,28 @@ set -Eeuo pipefail
 #############################################
 
 
-install_argocd()
-{
+install_argocd() {
 
     log_info "Installing Argo CD"
-
 
     kubectl create namespace argocd \
         --dry-run=client \
         -o yaml | kubectl apply -f -
 
-
     helm repo add argo \
         https://argoproj.github.io/argo-helm \
         >/dev/null 2>&1
 
-
     helm repo update \
         >/dev/null 2>&1
-
 
     helm upgrade \
         --install argocd \
         argo/argo-cd \
         --namespace argocd \
-        --values "${ROOT_DIR}/bootstrap/argocd/values.yaml" \
         --wait
 
-
-    log_info "Waiting for Argo CD API"
-
+    log_info "Waiting for Argo CD API..."
 
     kubectl wait \
         --for=condition=available \
@@ -45,8 +37,7 @@ install_argocd()
         -n argocd \
         --timeout=300s
 
-
-    log_ok "Argo CD Installed"
+    log_ok "Argo CD Installed."
 
 }
 
