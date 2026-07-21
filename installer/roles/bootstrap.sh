@@ -197,6 +197,9 @@ bootstrap_cluster() {
     next_step "Installing Cilium"
 
 
+    install_cilium_cli
+    
+    
     install_cilium
 
 
