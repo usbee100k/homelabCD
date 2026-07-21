@@ -56,7 +56,11 @@ configure_argocd_repository()
 
     local repo_url
 
-    repo_url="$(_bootstrap_ssh_url)"
+    repo_url="${GITHUB_REPO}"
+
+    if [[ "${repo_url}" == https://github.com/* ]]; then
+        repo_url="${repo_url/https:\/\/github.com\//git@github.com:}"
+    fi
 
 
     kubectl create secret generic bootstrap-repository \
@@ -88,39 +92,29 @@ configure_argocd_repository()
 #############################################
 
 
-bootstrap_gitops()
-{
+bootstrap_gitops() {
 
     log_info "Bootstrapping GitOps"
 
+    [[ -n "${GITHUB_REPO:-}" ]] || \
+        die "GITHUB_REPO missing"
 
-    [[ -n "${BOOTSTRAP_REPO:-}" ]] || \
-        die "BOOTSTRAP_REPO missing"
-
-
+    configure_argocd_repository
 
     kubectl apply \
         -f "${ROOT_DIR}/bootstrap/projects/default-project.yaml"
 
-
-
     mkdir -p "${ROOT_DIR}/generated"
 
-
-
     sed \
-    -e "s|REPLACE_REPO_URL|${BOOTSTRAP_REPO}|g" \
-    -e "s|REPLACE_BRANCH|${GIT_BRANCH:-main}|g" \
-    "${ROOT_DIR}/bootstrap/root-app.yaml" \
-    > "${ROOT_DIR}/generated/root-app.yaml"
-
-
+        -e "s|REPLACE_REPO_URL|${GITHUB_REPO}|g" \
+        -e "s|REPLACE_BRANCH|${GIT_BRANCH:-main}|g" \
+        "${ROOT_DIR}/bootstrap/root-app.yaml" \
+        > "${ROOT_DIR}/generated/root-app.yaml"
 
     kubectl apply \
         -f "${ROOT_DIR}/generated/root-app.yaml"
 
-
-
-    log_ok "GitOps bootstrap complete"
+    log_ok "GitOps bootstrap complete."
 
 }

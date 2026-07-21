@@ -96,7 +96,6 @@ for fn in \
     validate_system \
     detect_network \
     load_config \
-    ask_bootstrap_repo \
     main_menu
 do
     require_function "$fn"
@@ -186,11 +185,7 @@ load_config
 # Step 5 — Continue with Kubernetes Setup
 #############################################
 
-ask_bootstrap_repo
 
-setup_bootstrap_ssh
-
-validate_bootstrap_config
 
 #############################################
 # Launch Installer
