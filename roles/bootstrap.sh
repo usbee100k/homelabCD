@@ -154,6 +154,8 @@ bootstrap_cluster() {
 
     untaint_controlplane
 
+    verify_cluster_dns
+
     finish_step
 
 
