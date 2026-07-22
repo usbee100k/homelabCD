@@ -49,7 +49,6 @@ install_argocd() {
     helm upgrade --install argocd argo/argo-cd \
         --namespace argocd \
         --create-namespace \
-        --set crds.install=true \
         --timeout 15m
 
 
