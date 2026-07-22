@@ -6,6 +6,7 @@ set -Eeuo pipefail
 # ARGO CD INSTALLATION
 #############################################
 
+
 install_argocd() {
 
     log_info "Installing Argo CD"

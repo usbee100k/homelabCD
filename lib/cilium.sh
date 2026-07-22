@@ -7,6 +7,19 @@ set -Eeuo pipefail
 # Install Cilium CLI
 #############################################
 
+detect_primary_interface() {
+
+    if [[ -n "${NETWORK_INTERFACE:-}" ]]; then
+        echo "${NETWORK_INTERFACE}"
+        return
+    fi
+
+    ip route get 1.1.1.1 \
+        | awk '/dev/ {for(i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}'
+}
+
+
+
 install_cilium_cli() {
 
     log_info "Installing Cilium CLI..."
@@ -131,16 +144,21 @@ install_cilium() {
     # Install Cilium
     #############################################
 
-  cilium install \
-    --version "${version}" \
-    --set kubeProxyReplacement=true \
-    --set k8sServiceHost="${VIP_ADDRESS}" \
-    --set k8sServicePort=6443 \
-    --set ipam.mode=kubernetes \
-    --set routingMode=tunnel \
-    --set tunnelProtocol=vxlan \
-    --set autoDirectNodeRoutes=false \
-    --set rollOutCiliumPods=true
+
+
+    DEVICE="$(detect_primary_interface)"
+
+    cilium install \
+        --version "${version}" \
+        --set kubeProxyReplacement=true \
+        --set k8sServiceHost="${VIP_ADDRESS}" \
+        --set k8sServicePort=6443 \
+        --set devices="${DEVICE}" \
+        --set ipam.mode=kubernetes \
+        --set routingMode=tunnel \
+        --set tunnelProtocol=vxlan \
+        --set autoDirectNodeRoutes=false \
+        --set rollOutCiliumPods=true
 
 }
 
