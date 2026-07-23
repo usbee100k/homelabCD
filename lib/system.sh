@@ -233,70 +233,33 @@ configure_kubectl() {
 
     log_info "Configuring kubectl..."
 
-
     local TARGET_USER
     local TARGET_HOME
 
-
     if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
-
         TARGET_USER="${SUDO_USER}"
         TARGET_HOME="$(getent passwd "${TARGET_USER}" | cut -d: -f6)"
-
     else
-
         TARGET_USER="$(id -un)"
         TARGET_HOME="$HOME"
-
     fi
-
-
 
     if [[ ! -f /etc/kubernetes/admin.conf ]]; then
-
         log_error "Missing /etc/kubernetes/admin.conf"
         return 1
-
     fi
-
-
 
     mkdir -p "${TARGET_HOME}/.kube"
 
+    # Always refresh the kubeconfig from the current cluster
+    cp -f /etc/kubernetes/admin.conf "${TARGET_HOME}/.kube/config"
 
-
-    if [[ -f "${TARGET_HOME}/.kube/config" ]]; then
-
-        log_ok "kubectl already configured for ${TARGET_USER}. Skipping."
-        
-        export KUBECONFIG="${TARGET_HOME}/.kube/config"
-
-        return 0
-
-    fi
-
-
-
-    cp /etc/kubernetes/admin.conf \
-        "${TARGET_HOME}/.kube/config"
-
-
-
-    chown -R "${TARGET_USER}:${TARGET_USER}" \
-        "${TARGET_HOME}/.kube"
-
-
+    chown -R "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.kube"
 
     chmod 700 "${TARGET_HOME}/.kube"
-
     chmod 600 "${TARGET_HOME}/.kube/config"
-
-
 
     export KUBECONFIG="${TARGET_HOME}/.kube/config"
 
-
-
     log_ok "kubectl configured for ${TARGET_USER}."
-
 }
