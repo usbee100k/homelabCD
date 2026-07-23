@@ -198,6 +198,8 @@ bootstrap_cluster() {
 
     install_bootstrap_dependencies
 
+    ensure_age_key
+
     create_bootstrap_package
 
     upload_bootstrap_package

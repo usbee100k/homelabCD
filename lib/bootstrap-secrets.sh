@@ -52,6 +52,37 @@ create_bootstrap_package() {
 
 }
 
+ensure_age_key() {
+
+    if [[ -n "${SUDO_USER}" ]]; then
+        REAL_HOME=$(eval echo "~${SUDO_USER}")
+    else
+        REAL_HOME="${HOME}"
+    fi
+
+
+    AGE_DIR="${REAL_HOME}/.config/sops/age"
+    AGE_KEY_FILE="${AGE_DIR}/keys.txt"
+
+
+    if [[ -f "${AGE_KEY_FILE}" ]]; then
+
+        log_ok "Age key already exists: ${AGE_KEY_FILE}"
+
+    else
+
+        log_info "Generating new age key"
+
+        mkdir -p "${AGE_DIR}"
+
+        age-keygen -o "${AGE_KEY_FILE}"
+
+        chmod 600 "${AGE_KEY_FILE}"
+
+        log_ok "Age key created"
+    fi
+
+}
 
 
 encrypt_bootstrap_file() {
