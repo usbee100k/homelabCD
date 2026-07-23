@@ -58,16 +58,19 @@ ensure_github_ssh_access() {
         log_info "Testing GitHub SSH authentication"
 
 
+        set +e
+
         SSH_TEST=$(ssh -T git@github.com 2>&1)
 
+        set -e
 
-        if echo "${SSH_TEST}" | grep -qi "successfully authenticated"; then
+
+        if [[ "${SSH_TEST}" == *"successfully authenticated"* ]]; then
 
             log_ok "GitHub SSH authentication successful."
             break
 
         fi
-
 
         echo
         log_error "GitHub SSH authentication failed."
