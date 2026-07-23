@@ -34,6 +34,12 @@ ensure_github_ssh_access() {
 
     fi
 
+    
+    # Add github host key
+    ssh-keyscan github.com >> "${SSH_DIR}/known_hosts" 2>/dev/null
+    chmod 600 "${SSH_DIR}/known_hosts"
+
+
      # Test first - if already working, do nothing
     log_info "Testing GitHub SSH authentication"
 
@@ -49,6 +55,7 @@ ensure_github_ssh_access() {
     fi
 
 
+
     echo
     echo "================================================="
     echo " GitHub SSH public key"
@@ -61,9 +68,7 @@ ensure_github_ssh_access() {
     echo
 
 
-    # Add github host key
-    ssh-keyscan github.com >> "${SSH_DIR}/known_hosts" 2>/dev/null
-    chmod 600 "${SSH_DIR}/known_hosts"
+
 
 
 
