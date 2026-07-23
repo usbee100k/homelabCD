@@ -116,6 +116,7 @@ detect_network
 for cmd in \
     bash \
     curl \
+    age \
     git \
     jq \
     sed \
