@@ -2,7 +2,103 @@
 
 set -Eeuo pipefail
 
+
+#############################################
+# ROLE BOOTSTRAP
+#############################################
+
+if [[ -z "${ROOT_DIR:-}" ]]; then
+    ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+    export ROOT_DIR
+fi
+
+
 export NODE_ROLE="worker"
+
+
+#############################################
+# Load Configuration
+#############################################
+
+if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
+    source "${ROOT_DIR}/config/defaults.env"
+fi
+
+
+if [[ -f "${ROOT_DIR}/config/versions.env" ]]; then
+    source "${ROOT_DIR}/config/versions.env"
+fi
+
+
+if [[ -f "${ROOT_DIR}/config/bootstrap.env" ]]; then
+    source "${ROOT_DIR}/config/bootstrap.env"
+fi
+
+
+export KUBERNETES_VERSION="${KUBERNETES_VERSION:-unknown}"
+
+
+
+#############################################
+# Load Required Libraries
+#############################################
+
+LIBRARIES=(
+
+    logging
+    common
+    progress
+
+    config
+
+    validation
+    system
+    networking
+
+    containerd
+
+    kubeadm
+
+    bootstrap-dependencies
+    bootstrap-secrets
+    bootstrap-download
+
+    secrets
+
+    inventory
+    node-labels
+    hardware-labels
+
+    health
+
+)
+
+
+for lib in "${LIBRARIES[@]}"; do
+
+    if [[ -f "${ROOT_DIR}/lib/${lib}.sh" ]]; then
+
+        source "${ROOT_DIR}/lib/${lib}.sh"
+
+    else
+
+        echo "[ERROR] Missing library: ${lib}.sh"
+        exit 1
+
+    fi
+
+done
+
+
+
+#############################################
+# Load Configuration Values
+#############################################
+
+if declare -F load_config >/dev/null; then
+    load_config
+fi
+
 
 
 #############################################
@@ -11,20 +107,34 @@ export NODE_ROLE="worker"
 
 join_worker() {
 
+
     header
+
 
     log_info "Joining worker node"
 
 
 
     #########################################
-    # Host Preparation
+    # Validate Host
+    #########################################
+
+    next_step "Validating Host"
+
+
+    validate_system
+
+
+    finish_step
+
+
+
+    #########################################
+    # Prepare OS
     #########################################
 
     next_step "Preparing Operating System"
 
-
-    validate_system
 
     update_system
 
@@ -56,7 +166,7 @@ join_worker() {
 
 
     #########################################
-    # Kubernetes Packages
+    # Kubernetes
     #########################################
 
     next_step "Installing Kubernetes Packages"
@@ -70,29 +180,43 @@ join_worker() {
 
 
     #########################################
-    # Bootstrap Credentials
+    # Bootstrap Secrets
     #########################################
 
     next_step "Retrieving Cluster Join Credentials"
 
 
-    download_bootstrap_secrets
+    if [[ -z "${BOOTSTRAP_REPO:-}" ]]; then
 
-
-    if [[ ! -f "${ROOT_DIR}/generated/secrets/worker_join.sh" ]]; then
-
-        log_error "Worker join command missing after decryption."
+        log_error "BOOTSTRAP_REPO is missing."
 
         echo
-        echo "Expected:"
-        echo "${ROOT_DIR}/generated/secrets/worker_join.sh"
+        echo "Set it in:"
+        echo "${ROOT_DIR}/config/defaults.env"
+        echo
 
         exit 1
 
     fi
 
 
-    chmod +x "${ROOT_DIR}/generated/secrets/worker_join.sh"
+
+    download_bootstrap_secrets
+
+
+
+    if [[ ! -f "${ROOT_DIR}/generated/secrets/worker_join.sh" ]]; then
+
+        log_error "Worker join command missing."
+
+        exit 1
+
+    fi
+
+
+
+    chmod +x \
+        "${ROOT_DIR}/generated/secrets/worker_join.sh"
 
 
     finish_step
@@ -106,14 +230,15 @@ join_worker() {
     next_step "Joining Kubernetes Cluster"
 
 
+
     if ! bash "${ROOT_DIR}/generated/secrets/worker_join.sh"; then
 
         log_error "kubeadm join failed."
 
         echo
-        echo "Check:"
-        echo "  systemctl status kubelet"
-        echo "  journalctl -u kubelet -xe"
+        echo "Debug:"
+        echo "systemctl status kubelet"
+        echo "journalctl -u kubelet -xe"
         echo
 
         exit 1
@@ -121,32 +246,16 @@ join_worker() {
     fi
 
 
-    finish_step
-
-
-
-    #########################################
-    # Wait For Node Registration
-    #########################################
-
-    next_step "Waiting For Node Registration"
-
-
-    log_info "Worker joined. Waiting for kubelet..."
-
-
-    sleep 15
-
 
     finish_step
 
 
 
     #########################################
-    # Node Configuration
+    # Configure Node
     #########################################
 
-    next_step "Configuring Node"
+    next_step "Configuring Worker Node"
 
 
     register_node
@@ -166,16 +275,16 @@ join_worker() {
     # Validation
     #########################################
 
-    next_step "Node Validation"
+    next_step "Validating Worker"
 
 
     if systemctl is-active --quiet kubelet; then
 
-        log_ok "Kubelet is running."
+        log_ok "Kubelet running."
 
     else
 
-        log_error "Kubelet is not running."
+        log_error "Kubelet failed."
 
         systemctl status kubelet --no-pager
 
@@ -191,6 +300,7 @@ join_worker() {
     log_ok "Worker Node Joined Successfully."
 
 }
+
 
 
 join_worker
