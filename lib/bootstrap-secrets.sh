@@ -42,9 +42,16 @@ create_bootstrap_package() {
 
 
 
+    CLUSTER_INFO="${ROOT_DIR}/generated/cluster-info.yaml"
+
+    if [[ ! -f "${CLUSTER_INFO}" ]]; then
+        log_error "Missing cluster info file: ${CLUSTER_INFO}"
+        exit 1
+    fi
+
     cp \
-    "${ROOT_DIR}/generated/cluster-info.yaml" \
-    "${BOOTSTRAP_DIR}/"
+        "${CLUSTER_INFO}" \
+        "${BOOTSTRAP_DIR}/"
 
 
 
