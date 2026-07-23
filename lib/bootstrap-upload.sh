@@ -11,6 +11,8 @@ ensure_github_ssh_access() {
     SSH_KEY="${SSH_DIR}/id_ed25519"
     SSH_PUB="${SSH_KEY}.pub"
 
+    export GIT_SSH_COMMAND="ssh -i ${SSH_KEY} -o IdentitiesOnly=yes"
+
 
     mkdir -p "${SSH_DIR}"
     chmod 700 "${SSH_DIR}"
@@ -50,6 +52,7 @@ ensure_github_ssh_access() {
     chmod 600 "${SSH_DIR}/known_hosts"
 
 
+
     while true; do
 
         read -rp "Press ENTER after adding the SSH key to GitHub..."
@@ -58,28 +61,31 @@ ensure_github_ssh_access() {
         log_info "Testing GitHub SSH authentication"
 
 
-        set +e
+        ssh -T git@github.com > /tmp/github-ssh-test.log 2>&1 || true
 
-        SSH_TEST=$(ssh -T git@github.com 2>&1)
 
-        set -e
+        SSH_TEST=$(cat /tmp/github-ssh-test.log)
 
 
         if [[ "${SSH_TEST}" == *"successfully authenticated"* ]]; then
 
             log_ok "GitHub SSH authentication successful."
-            break
+            return 0
 
         fi
+
 
         echo
         log_error "GitHub SSH authentication failed."
         echo
-        echo "Make sure this key exists in GitHub:"
+        echo "${SSH_TEST}"
+        echo
+        echo "Your SSH public key:"
         echo
         cat "${SSH_PUB}"
         echo
-        echo "Retry after adding it."
+        echo "Add it here:"
+        echo "https://github.com/settings/keys"
         echo
 
     done

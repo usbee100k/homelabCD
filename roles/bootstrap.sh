@@ -198,12 +198,17 @@ bootstrap_cluster() {
 
     install_bootstrap_dependencies
     
+    
+    ensure_age_key
+    
+    
     generate_report
 
-    ensure_age_key
 
     create_bootstrap_package
-
+    
+    ensure_github_ssh_access
+    
     upload_bootstrap_package
 
     finish_step
