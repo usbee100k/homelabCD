@@ -51,6 +51,8 @@ LIBRARIES=(
 
     config
 
+    github
+
     validation
     system
     networking
@@ -186,22 +188,80 @@ join_worker() {
     next_step "Retrieving Cluster Join Credentials"
 
 
+    #########################################
+    # Bootstrap Repository
+    #########################################
+
     if [[ -z "${BOOTSTRAP_REPO:-}" ]]; then
 
-        log_error "BOOTSTRAP_REPO is missing."
 
         echo
-        echo "Set it in:"
-        echo "${ROOT_DIR}/config/defaults.env"
+        echo "================================================="
+        echo " Bootstrap Repository Required"
+        echo "================================================="
+        echo
+        echo "Example:"
+        echo "git@github.com:user/bootstrap-repo.git"
         echo
 
-        exit 1
+
+        read -rp "Enter Bootstrap Git Repository URL: " BOOTSTRAP_REPO
+
+
+        if [[ -z "${BOOTSTRAP_REPO}" ]]; then
+
+            log_error "Bootstrap repository cannot be empty."
+
+            exit 1
+
+        fi
+
+
+        export BOOTSTRAP_REPO
+
+
+
+        if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
+
+
+            sed -i \
+                '/^BOOTSTRAP_REPO=/d' \
+                "${ROOT_DIR}/config/defaults.env"
+
+
+            echo "BOOTSTRAP_REPO=\"${BOOTSTRAP_REPO}\"" \
+                >> "${ROOT_DIR}/config/defaults.env"
+
+
+            log_ok "Bootstrap repository saved."
+
+        fi
+
 
     fi
 
 
 
+    #########################################
+    # GitHub SSH Access
+    #########################################
+
+    next_step "Verifying GitHub SSH Access"
+
+
+    ensure_github_ssh_access
+
+
+    finish_step
+
+
+
+    #########################################
+    # Download Bootstrap Secrets
+    #########################################
+
     download_bootstrap_secrets
+
 
 
 
