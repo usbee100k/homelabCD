@@ -7,12 +7,9 @@ set -Eeuo pipefail
 # WORKER NODE JOIN
 #############################################
 
-
 join_worker() {
 
-
     header
-
 
     log_info "Joining worker node"
 
@@ -21,7 +18,6 @@ join_worker() {
     #########################################
     # Host Preparation
     #########################################
-
 
     next_step "Preparing Operating System"
 
@@ -47,7 +43,6 @@ join_worker() {
     # Container Runtime
     #########################################
 
-
     next_step "Installing Container Runtime"
 
 
@@ -59,9 +54,8 @@ join_worker() {
 
 
     #########################################
-    # Kubernetes
+    # Kubernetes Packages
     #########################################
-
 
     next_step "Installing Kubernetes Packages"
 
@@ -74,79 +68,74 @@ join_worker() {
 
 
     #########################################
-    # Download Bootstrap Secrets
+    # Bootstrap Credentials
     #########################################
 
-
     next_step "Retrieving Cluster Join Credentials"
-
 
 
     download_bootstrap_secrets
 
 
-
-    finish_step
-
-
-
-    #########################################
-    # Join Worker
-    #########################################
-
-
-    next_step "Joining Kubernetes Cluster"
-
-
-
     if [[ ! -f "${ROOT_DIR}/generated/secrets/worker_join.sh" ]]; then
 
-
-        log_error "Missing worker join command."
-
+        log_error "Worker join command missing after decryption."
 
         echo
-
-        echo "Bootstrap repository did not contain worker_join.sh"
-
+        echo "Expected:"
+        echo "${ROOT_DIR}/generated/secrets/worker_join.sh"
 
         exit 1
 
     fi
 
 
+    chmod +x "${ROOT_DIR}/generated/secrets/worker_join.sh"
+
+
+    finish_step
+
+
+
+    #########################################
+    # Join Cluster
+    #########################################
+
+    next_step "Joining Kubernetes Cluster"
+
 
     bash "${ROOT_DIR}/generated/secrets/worker_join.sh"
 
 
+    finish_step
+
+
+
+    #########################################
+    # Wait For Node Registration
+    #########################################
+
+    next_step "Waiting For Node Registration"
+
+
+    log_info "Worker joined. Waiting for kubelet..."
+
+
+    sleep 15
+
 
     finish_step
 
 
 
     #########################################
-    # Node Registration
+    # Node Configuration
     #########################################
 
-
-    next_step "Registering Node"
-
+    next_step "Configuring Node"
 
 
     register_node
-
-
-    finish_step
-
-
-
-    #########################################
-    # Apply Kubernetes Labels
-    #########################################
-
-
-    next_step "Applying Node Labels"
-
 
 
     apply_node_labels
@@ -155,22 +144,18 @@ join_worker() {
     detect_special_hardware
 
 
-
     finish_step
 
 
 
     #########################################
-    # Verify
+    # Validation
     #########################################
-
 
     next_step "Node Validation"
 
 
-
-    kubectl get nodes
-
+    kubectl get nodes -o wide
 
 
     finish_step
