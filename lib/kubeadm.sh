@@ -52,7 +52,7 @@ if dpkg-query -W -f='${Status}' kubelet kubeadm kubectl 2>/dev/null | \
    grep -q "install ok installed"; then
     log_info "Kubernetes packages already installed. Skipping package installation."
 else
-    apt-get install -y \
+    apt-get install -y --allow-downgrades \
         kubelet="${KUBERNETES_VERSION}-*" \
         kubeadm="${KUBERNETES_VERSION}-*" \
         kubectl="${KUBERNETES_VERSION}-*"

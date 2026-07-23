@@ -2,6 +2,8 @@
 
 set -Eeuo pipefail
 
+export NODE_ROLE="worker"
+
 
 #############################################
 # WORKER NODE JOIN
