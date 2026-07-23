@@ -1,5 +1,154 @@
 #!/usr/bin/env bash
 
+#############################################
+# INSTALL BOOTSTRAP DEPENDENCIES
+#############################################
+
+install_bootstrap_dependencies() {
+
+    log_info "Checking bootstrap dependencies"
+
+
+    #############################################
+    # BASE PACKAGES
+    #############################################
+
+    REQUIRED_PACKAGES=(
+        curl
+        git
+        openssh-client
+    )
+
+
+    for PKG in "${REQUIRED_PACKAGES[@]}"; do
+
+        if dpkg -s "${PKG}" >/dev/null 2>&1; then
+
+            log_ok "${PKG} already installed"
+
+        else
+
+            log_info "Installing ${PKG}..."
+
+            sudo apt update
+            sudo apt install -y "${PKG}"
+
+        fi
+
+    done
+
+
+
+    #############################################
+    # AGE
+    #############################################
+
+    if command -v age >/dev/null 2>&1; then
+
+        log_ok "age already installed: $(age --version | head -1)"
+
+    else
+
+        log_info "Installing age..."
+
+        sudo apt update
+        sudo apt install -y age
+
+
+        if ! command -v age >/dev/null 2>&1; then
+
+            log_error "Failed to install age"
+            exit 1
+
+        fi
+
+
+        log_ok "age installed"
+
+    fi
+
+
+
+    #############################################
+    # SOPS
+    #############################################
+
+    if command -v sops >/dev/null 2>&1; then
+
+        log_ok "sops already installed: $(sops --version | head -1)"
+
+    else
+
+        log_info "Installing sops..."
+
+
+        SOPS_VERSION=$(curl -fsSL \
+            https://api.github.com/repos/getsops/sops/releases/latest \
+            | grep tag_name \
+            | cut -d '"' -f4)
+
+
+
+        if [[ -z "${SOPS_VERSION}" ]]; then
+
+            log_error "Unable to determine latest SOPS version"
+            exit 1
+
+        fi
+
+
+        log_info "Downloading SOPS ${SOPS_VERSION}"
+
+
+        curl -fsSL \
+            -o /tmp/sops.deb \
+            "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops_${SOPS_VERSION#v}_amd64.deb"
+
+
+
+        sudo dpkg -i /tmp/sops.deb || sudo apt-get install -f -y
+
+
+
+        rm -f /tmp/sops.deb
+
+
+
+        if ! command -v sops >/dev/null 2>&1; then
+
+            log_error "Failed to install sops"
+            exit 1
+
+        fi
+
+
+        log_ok "sops installed: $(sops --version | head -1)"
+
+    fi
+
+
+
+    #############################################
+    # FINAL VERIFY
+    #############################################
+
+    for CMD in age sops git ssh curl; do
+
+        if ! command -v "${CMD}" >/dev/null 2>&1; then
+
+            log_error "Missing required command: ${CMD}"
+            exit 1
+
+        fi
+
+    done
+
+
+    log_ok "Bootstrap dependencies ready"
+
+}
+
+
 
 #############################################
 # ENCRYPT BOOTSTRAP FILES
