@@ -45,19 +45,20 @@ EOF
 
 
 
-    apt-get update
+   apt-get update
 
-
+# Skip if the desired version is already installed
+if dpkg-query -W -f='${Status}' kubelet kubeadm kubectl 2>/dev/null | \
+   grep -q "install ok installed"; then
+    log_info "Kubernetes packages already installed. Skipping package installation."
+else
     apt-get install -y \
-        kubelet \
-        kubeadm \
-        kubectl
+        kubelet="${KUBERNETES_VERSION}-*" \
+        kubeadm="${KUBERNETES_VERSION}-*" \
+        kubectl="${KUBERNETES_VERSION}-*"
 
-
-    apt-mark hold \
-        kubelet \
-        kubeadm \
-        kubectl
+    apt-mark hold kubelet kubeadm kubectl
+fi
 
 
     systemctl enable kubelet
