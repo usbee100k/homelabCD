@@ -196,6 +196,8 @@ bootstrap_cluster() {
 
     next_step "Creating Encrypted Bootstrap Package"
 
+    install_bootstrap_dependencies
+
     create_bootstrap_package
 
     upload_bootstrap_package

@@ -138,6 +138,82 @@ fi
 require_command yq
 
 #############################################
+# INSTALL BOOTSTRAP DEPENDENCIES
+#############################################
+
+install_bootstrap_dependencies() {
+
+    log_info "Checking bootstrap dependencies"
+
+
+    # Install age if missing
+    if command -v age >/dev/null 2>&1; then
+
+        log_ok "age already installed: $(age --version | head -1)"
+
+    else
+
+        log_info "Installing age..."
+
+        sudo apt update
+        sudo apt install -y age
+
+        if ! command -v age >/dev/null 2>&1; then
+            log_error "Failed to install age"
+            exit 1
+        fi
+
+        log_ok "age installed"
+    fi
+
+
+
+    # Install sops if missing
+    if command -v sops >/dev/null 2>&1; then
+
+        log_ok "sops already installed: $(sops --version)"
+
+    else
+
+        log_info "Installing sops..."
+
+
+        SOPS_VERSION=$(curl -s https://api.github.com/repos/getsops/sops/releases/latest \
+            | grep tag_name \
+            | cut -d '"' -f4)
+
+
+        if [[ -z "${SOPS_VERSION}" ]]; then
+            log_error "Unable to determine latest SOPS version"
+            exit 1
+        fi
+
+
+        curl -Lo /tmp/sops.deb \
+            "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops_${SOPS_VERSION#v}_amd64.deb"
+
+
+        sudo dpkg -i /tmp/sops.deb
+
+
+        rm -f /tmp/sops.deb
+
+
+        if ! command -v sops >/dev/null 2>&1; then
+            log_error "Failed to install sops"
+            exit 1
+        fi
+
+
+        log_ok "sops installed"
+    fi
+
+
+    log_ok "Bootstrap dependencies ready"
+
+}
+
+#############################################
 # Step 4 — Load Configuration
 #############################################
 

@@ -16,6 +16,42 @@ command -v age-keygen >/dev/null || {
 }
 
 
+create_bootstrap_package() {
+
+
+    BOOTSTRAP_DIR="${ROOT_DIR}/generated/bootstrap"
+
+
+    mkdir -p "${BOOTSTRAP_DIR}/secrets"
+
+
+
+    log_info "Creating encrypted bootstrap package"
+
+
+
+    encrypt_bootstrap_file \
+    "${ROOT_DIR}/generated/worker_join.sh" \
+    "${BOOTSTRAP_DIR}/secrets/worker_join.enc"
+
+
+
+    encrypt_bootstrap_file \
+    "${ROOT_DIR}/generated/controlplane_join.sh" \
+    "${BOOTSTRAP_DIR}/secrets/controlplane_join.enc"
+
+
+
+    cp \
+    "${ROOT_DIR}/generated/cluster-info.yaml" \
+    "${BOOTSTRAP_DIR}/"
+
+
+
+    log_ok "Bootstrap package created."
+
+}
+
 
 
 encrypt_bootstrap_file() {
@@ -28,28 +64,43 @@ encrypt_bootstrap_file() {
         exit 1
     fi
 
+
     # Load AGE public key if not already set
     if [[ -z "${AGE_PUBLIC_KEY}" ]]; then
 
-        AGE_KEY_FILE="${HOME}/.config/sops/age/keys.txt"
+        # Resolve real user's home directory when running with sudo
+        if [[ -n "${SUDO_USER}" ]]; then
+            REAL_HOME=$(eval echo "~${SUDO_USER}")
+        else
+            REAL_HOME="${HOME}"
+        fi
+
+        AGE_KEY_FILE="${REAL_HOME}/.config/sops/age/keys.txt"
+
 
         if [[ ! -f "${AGE_KEY_FILE}" ]]; then
             log_error "Missing age key file: ${AGE_KEY_FILE}"
             exit 1
         fi
 
+
         AGE_PUBLIC_KEY=$(age-keygen -y "${AGE_KEY_FILE}")
+
 
         if [[ -z "${AGE_PUBLIC_KEY}" ]]; then
             log_error "Failed to generate AGE_PUBLIC_KEY"
             exit 1
         fi
 
+
         export AGE_PUBLIC_KEY
+
+        log_info "Using AGE public key: ${AGE_PUBLIC_KEY}"
     fi
 
 
     log_info "Encrypting ${SOURCE_FILE}"
+
 
     sops \
         --encrypt \
@@ -62,5 +113,8 @@ encrypt_bootstrap_file() {
         log_error "Encryption failed for ${SOURCE_FILE}"
         exit 1
     fi
+
+
+    log_ok "Encrypted: ${OUTPUT_FILE}"
 
 }
