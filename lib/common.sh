@@ -92,14 +92,14 @@ do
 
     2)
 
-        bash "${ROOT_DIR}/roles/controlplane.sh"
+        source "${ROOT_DIR}/roles/controlplane.sh"
 
         ;;
 
 
     3)
 
-        bash "${ROOT_DIR}/roles/worker.sh"
+        source "${ROOT_DIR}/roles/worker.sh"
 
         ;;
 

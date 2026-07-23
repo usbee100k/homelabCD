@@ -104,7 +104,19 @@ join_worker() {
     next_step "Joining Kubernetes Cluster"
 
 
-    bash "${ROOT_DIR}/generated/secrets/worker_join.sh"
+    if ! bash "${ROOT_DIR}/generated/secrets/worker_join.sh"; then
+
+        log_error "kubeadm join failed."
+
+        echo
+        echo "Check:"
+        echo "  systemctl status kubelet"
+        echo "  journalctl -u kubelet -xe"
+        echo
+
+        exit 1
+
+    fi
 
 
     finish_step
@@ -155,7 +167,19 @@ join_worker() {
     next_step "Node Validation"
 
 
-    kubectl get nodes -o wide
+    if systemctl is-active --quiet kubelet; then
+
+        log_ok "Kubelet is running."
+
+    else
+
+        log_error "Kubelet is not running."
+
+        systemctl status kubelet --no-pager
+
+        exit 1
+
+    fi
 
 
     finish_step
