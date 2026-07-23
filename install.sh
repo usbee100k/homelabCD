@@ -57,15 +57,53 @@ require_function() {
 
 
 #############################################
-# Bootstrap SOPS BEFORE VALIDATION
+# Bootstrap Encryption Tools BEFORE VALIDATION
 #############################################
 
-install_sops_if_missing() {
+install_encryption_tools() {
+
+
+    #################################
+    # AGE
+    #################################
+
+    if command -v age >/dev/null 2>&1; then
+
+        echo "[ OK ] age already installed: $(age --version | head -1)"
+
+    else
+
+        echo "[INFO] Installing age..."
+
+        apt update
+        apt install -y age
+
+
+        if ! command -v age >/dev/null 2>&1; then
+
+            die "age installation failed"
+
+        fi
+
+
+        echo "[ OK ] age installed"
+
+    fi
+
+
+
+    #################################
+    # SOPS
+    #################################
 
     if command -v sops >/dev/null 2>&1; then
+
         echo "[ OK ] sops already installed: $(sops --version | head -1)"
+
         return 0
+
     fi
+
 
 
     echo "[INFO] Installing sops..."
@@ -75,13 +113,16 @@ install_sops_if_missing() {
     apt install -y curl
 
 
+
     SOPS_VERSION=$(curl -fsSL \
         https://api.github.com/repos/getsops/sops/releases/latest \
         | grep tag_name \
         | cut -d '"' -f4)
 
 
+
     [[ -n "${SOPS_VERSION}" ]] || die "Unable to determine SOPS version"
+
 
 
     curl -fsSL \
@@ -89,20 +130,26 @@ install_sops_if_missing() {
         "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops_${SOPS_VERSION#v}_amd64.deb"
 
 
+
     dpkg -i /tmp/sops.deb || apt-get install -f -y
+
 
 
     rm -f /tmp/sops.deb
 
 
-    command -v sops >/dev/null 2>&1 \
-        || die "SOPS installation failed"
+
+    if ! command -v sops >/dev/null 2>&1; then
+
+        die "SOPS installation failed"
+
+    fi
+
 
 
     echo "[ OK ] sops installed"
 
 }
-
 
 #############################################
 # Root Check
@@ -115,7 +162,7 @@ install_sops_if_missing() {
 # Install Bootstrap Tools
 #############################################
 
-install_sops_if_missing
+install_encryption_tools
 
 
 
