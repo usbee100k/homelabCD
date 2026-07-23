@@ -100,7 +100,6 @@ ensure_github_ssh_access() {
 
 upload_bootstrap_package() {
 
-
     if [[ -z "${BOOTSTRAP_REPO}" ]]; then
 
         log_error "BOOTSTRAP_REPO is not set."
@@ -109,15 +108,16 @@ upload_bootstrap_package() {
     fi
 
 
-    ensure_github_ssh_access
-
-
     if [[ ! -d "${ROOT_DIR}/generated/bootstrap" ]]; then
 
         log_error "Bootstrap package missing."
         exit 1
 
     fi
+
+
+    # Make sure GitHub SSH access is ready
+    ensure_github_ssh_access
 
 
     TEMP_DIR="/tmp/bootstrap-upload"
@@ -150,6 +150,11 @@ upload_bootstrap_package() {
     cd "${TEMP_DIR}" || exit 1
 
 
+    # Configure git identity for this repository
+    git config user.name "${GIT_USER_NAME:-homelab-bootstrap}"
+    git config user.email "${GIT_USER_EMAIL:-homelab-bootstrap@localhost}"
+
+
     git add .
 
 
@@ -162,7 +167,24 @@ upload_bootstrap_package() {
         git commit \
             -m "Update encrypted cluster bootstrap"
 
+
+        if [[ $? -ne 0 ]]; then
+
+            log_error "Git commit failed."
+            exit 1
+
+        fi
+
+
         git push
+
+
+        if [[ $? -ne 0 ]]; then
+
+            log_error "Git push failed."
+            exit 1
+
+        fi
 
     fi
 
