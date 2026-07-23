@@ -158,8 +158,15 @@ verify_cluster_dns() {
         --for=condition=Ready pod/dns-test \
         --timeout=120s
 
-    kubectl exec dns-test -- \
-        nslookup kubernetes.default.svc >/dev/null
+    if ! kubectl exec dns-test -- nslookup kubernetes.default.svc; then
+    log_error "Cluster DNS verification failed."
+
+    kubectl get pods -A -o wide
+    kubectl get svc -A
+    kubectl get endpoints -A
+
+    exit 1
+    fi
 
     kubectl delete pod dns-test --wait=false >/dev/null
 
