@@ -116,7 +116,6 @@ detect_network
 for cmd in \
     bash \
     curl \
-    age \
     git \
     jq \
     sed \
@@ -136,6 +135,13 @@ if ! command -v yq >/dev/null 2>&1; then
     chmod +x /usr/local/bin/yq
 fi
 require_command yq
+
+
+
+source_required "${ROOT_DIR}/lib/logging.sh"
+source_required "${ROOT_DIR}/lib/bootstrap-dependencies.sh"
+source_required "${ROOT_DIR}/lib/bootstrap-secrets.sh"
+
 
 #############################################
 # INSTALL BOOTSTRAP DEPENDENCIES
