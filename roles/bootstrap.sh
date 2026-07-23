@@ -197,6 +197,8 @@ bootstrap_cluster() {
     next_step "Creating Encrypted Bootstrap Package"
 
     install_bootstrap_dependencies
+    
+    generate_report
 
     ensure_age_key
 
