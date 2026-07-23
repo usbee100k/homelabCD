@@ -2,11 +2,13 @@
 
 set -Eeuo pipefail
 
+
 #############################################
 # Error Handling
 #############################################
 
 trap 'echo >&2 "[ERROR] ${BASH_SOURCE[0]}:${LINENO}: ${BASH_COMMAND}"; exit 1' ERR
+
 
 #############################################
 # Root Directory
@@ -14,6 +16,8 @@ trap 'echo >&2 "[ERROR] ${BASH_SOURCE[0]}:${LINENO}: ${BASH_COMMAND}"; exit 1' E
 
 readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export ROOT_DIR
+
+
 
 #############################################
 # Helpers
@@ -24,30 +28,99 @@ die() {
     exit 1
 }
 
+
 require_file() {
     [[ -f "$1" ]] || die "Missing required file: $1"
 }
 
+
 source_required() {
     require_file "$1"
-    # shellcheck source=/dev/null
     source "$1"
 }
+
 
 source_optional() {
     [[ -f "$1" ]] && source "$1"
 }
 
+
 require_command() {
     command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
 }
+
 
 require_function() {
     declare -F "$1" >/dev/null || die "Required function '$1' not found."
 }
 
+
+
 #############################################
-# Step 1 — Load Libraries
+# Bootstrap SOPS BEFORE VALIDATION
+#############################################
+
+install_sops_if_missing() {
+
+    if command -v sops >/dev/null 2>&1; then
+        echo "[ OK ] sops already installed: $(sops --version | head -1)"
+        return 0
+    fi
+
+
+    echo "[INFO] Installing sops..."
+
+
+    apt update
+    apt install -y curl
+
+
+    SOPS_VERSION=$(curl -fsSL \
+        https://api.github.com/repos/getsops/sops/releases/latest \
+        | grep tag_name \
+        | cut -d '"' -f4)
+
+
+    [[ -n "${SOPS_VERSION}" ]] || die "Unable to determine SOPS version"
+
+
+    curl -fsSL \
+        -o /tmp/sops.deb \
+        "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops_${SOPS_VERSION#v}_amd64.deb"
+
+
+    dpkg -i /tmp/sops.deb || apt-get install -f -y
+
+
+    rm -f /tmp/sops.deb
+
+
+    command -v sops >/dev/null 2>&1 \
+        || die "SOPS installation failed"
+
+
+    echo "[ OK ] sops installed"
+
+}
+
+
+#############################################
+# Root Check
+#############################################
+
+(( EUID == 0 )) || die "Please run this installer as root."
+
+
+#############################################
+# Install Bootstrap Tools
+#############################################
+
+install_sops_if_missing
+
+
+
+#############################################
+# Load Libraries
 #############################################
 
 LIBRARIES=(
@@ -74,21 +147,22 @@ LIBRARIES=(
     report
     repair
     join
+    bootstrap-dependencies
     bootstrap-secrets
     bootstrap-upload
     bootstrap-download
 )
 
+
 for lib in "${LIBRARIES[@]}"; do
     source_required "${ROOT_DIR}/lib/${lib}.sh"
 done
 
-#############################################
-# Step 1b — Validate Required Functions
-#############################################
 
-#    setup_bootstrap_ssh 
-#    validate_bootstrap_config 
+
+#############################################
+# Validate Functions
+#############################################
 
 for fn in \
     validate_system \
@@ -99,13 +173,16 @@ do
     require_function "$fn"
 done
 
-#############################################
-# Step 2 — Validate the Host
-#############################################
 
-(( EUID == 0 )) || die "Please run this installer as root."
+
+#############################################
+# Validate Host
+#############################################
 
 validate_system
+
+
+
 detect_network
 
 #############################################
@@ -137,10 +214,6 @@ fi
 require_command yq
 
 
-
-source_required "${ROOT_DIR}/lib/logging.sh"
-source_required "${ROOT_DIR}/lib/bootstrap-dependencies.sh"
-source_required "${ROOT_DIR}/lib/bootstrap-secrets.sh"
 
 
 
