@@ -163,7 +163,26 @@ EOF
 
     fi
 
+    #############################################
+    # DISPLAY JOIN COMMANDS
+    #############################################
 
+    echo
+    echo "================================================="
+    echo " WORKER NODE JOIN COMMAND"
+    echo "================================================="
+    echo
+    cat "${ROOT_DIR}/generated/worker_join.sh"
+    echo
+    echo "================================================="
+    echo
+    echo " CONTROL PLANE JOIN COMMAND"
+    echo "================================================="
+    echo
+    cat "${ROOT_DIR}/generated/controlplane_join.sh"
+    echo
+    echo "================================================="
+    echo
 
     log_ok "Join commands generated."
 
