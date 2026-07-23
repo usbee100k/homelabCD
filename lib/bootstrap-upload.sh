@@ -34,6 +34,20 @@ ensure_github_ssh_access() {
 
     fi
 
+     # Test first - if already working, do nothing
+    log_info "Testing GitHub SSH authentication"
+
+
+    SSH_TEST=$(ssh -T git@github.com 2>&1 || true)
+
+
+    if [[ "${SSH_TEST}" == *"successfully authenticated"* ]]; then
+
+        log_ok "GitHub SSH authentication successful."
+        return 0
+
+    fi
+
 
     echo
     echo "================================================="
@@ -116,8 +130,7 @@ upload_bootstrap_package() {
     fi
 
 
-    # Make sure GitHub SSH access is ready
-    ensure_github_ssh_access
+
 
 
     TEMP_DIR="/tmp/bootstrap-upload"
