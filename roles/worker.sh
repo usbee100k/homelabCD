@@ -282,6 +282,39 @@ join_worker() {
     finish_step
 
 
+    if [[ -f /etc/kubernetes/kubelet.conf ]]; then
+
+        log_info "Existing Kubernetes installation detected."
+
+        read -rp "Reset this node before joining? [Y/n] " ANSWER
+
+        ANSWER="${ANSWER:-Y}"
+
+        if [[ "${ANSWER}" =~ ^[Yy]$ ]]; then
+
+            kubeadm reset -f
+
+            systemctl stop kubelet
+
+            rm -rf /etc/kubernetes
+            rm -rf /var/lib/kubelet
+            rm -rf /etc/cni/net.d
+
+            systemctl restart containerd
+
+            log_ok "Node reset complete."
+
+        else
+
+            log_error "Cannot join while Kubernetes is already configured."
+
+            exit 1
+
+        fi
+
+    fi
+
+
 
     #########################################
     # Join Cluster

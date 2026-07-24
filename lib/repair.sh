@@ -32,3 +32,15 @@ repair_node() {
     log_ok "Repair completed."
 
 }
+
+
+reset_worker_node() {
+    if [[ -f /etc/kubernetes/kubelet.conf ]]; then
+
+    log_info "Existing cluster detected."
+
+    reset_worker_node
+
+    fi
+
+}
