@@ -187,7 +187,6 @@ generate_argocd_ssh_key() {
 
     SSH_KEY_PATH="${SSH_KEY_PATH:-/etc/kubernetes/argocd/id_ed25519}"
 
-
     export SSH_KEY_PATH
 
 
@@ -195,31 +194,72 @@ generate_argocd_ssh_key() {
 
 
 
-    if [[ -f "${SSH_KEY_PATH}" ]]; then
+    #############################################
+    # Generate Key If Missing
+    #############################################
+
+    if [[ ! -f "${SSH_KEY_PATH}" ]]; then
+
+        ssh-keygen \
+            -t ed25519 \
+            -N "" \
+            -f "${SSH_KEY_PATH}" \
+            -C "argocd@${CLUSTER_NAME}"
+
+
+        chmod 600 "${SSH_KEY_PATH}"
+
+
+        log_ok "Argo CD SSH key generated."
+
+    else
 
         log_ok "Argo CD SSH key already exists."
-        return 0
 
     fi
 
 
 
-    ssh-keygen \
-        -t ed25519 \
-        -N "" \
-        -f "${SSH_KEY_PATH}" \
-        -C "argocd@${CLUSTER_NAME}"
+    #############################################
+    # Verify Public Key Exists
+    #############################################
+
+    if [[ ! -f "${SSH_KEY_PATH}.pub" ]]; then
+
+        log_error "SSH public key missing: ${SSH_KEY_PATH}.pub"
+
+        return 1
+
+    fi
 
 
 
-    chmod 600 "${SSH_KEY_PATH}"
+    #############################################
+    # Display Public Key
+    #############################################
+
+    echo
+    echo "================================================="
+    echo " ADD ARGO CD SSH KEY TO GITHUB"
+    echo "================================================="
+    echo
+    echo "Repository:"
+    echo "${GITHUB_REPO:-unknown}"
+    echo
+    echo "Go to:"
+    echo "GitHub → Repository → Settings → Deploy keys → Add deploy key"
+    echo
+    echo "Add this key:"
+    echo
+    cat "${SSH_KEY_PATH}.pub"
+    echo
+    echo "================================================="
+    echo
 
 
-
-    log_ok "Argo CD SSH key generated."
+    read -rp "Press ENTER after adding the key to GitHub..."
 
 }
-
 
 
 
