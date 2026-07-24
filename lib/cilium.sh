@@ -152,8 +152,6 @@ install_cilium() {
         --set kubeProxyReplacement=true \
         --set k8sServiceHost="${VIP_ADDRESS}" \
         --set k8sServicePort=6443 \
-        --set devices="${IFACE}" \
-        --set directRoutingDevice="${IFACE}" \
         --set ipam.mode=kubernetes \
         --set routingMode=tunnel \
         --set tunnelProtocol=vxlan \
