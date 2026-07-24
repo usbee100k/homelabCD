@@ -2,10 +2,11 @@
 
 generate_join_commands() {
 
-    mkdir -p "${ROOT_DIR}/generated"
+    mkdir -p "${ROOT_DIR}/generated/secrets"
 
 
     log_info "Generating Kubernetes join commands"
+
 
 
     #############################################
@@ -18,7 +19,7 @@ generate_join_commands() {
 
         KCFG="/etc/kubernetes/admin.conf"
 
-    elif [[ -n "${KUBECONFIG}" && -f "${KUBECONFIG}" ]]; then
+    elif [[ -n "${KUBECONFIG:-}" && -f "${KUBECONFIG}" ]]; then
 
         KCFG="${KUBECONFIG}"
 
@@ -49,7 +50,7 @@ generate_join_commands() {
 
     WORKER_JOIN=$(
         kubeadm token create \
-            --print-join-command
+        --print-join-command
     )
 
 
@@ -62,17 +63,20 @@ generate_join_commands() {
 
 
 
-    cat > "${ROOT_DIR}/generated/worker_join.sh" <<EOF
+    cat > "${ROOT_DIR}/generated/secrets/worker_join.sh" <<EOF
 #!/usr/bin/env bash
 
-set -e
+set -Eeuo pipefail
 
-${WORKER_JOIN}
-
+${WORKER_JOIN} \
+--cri-socket unix:///run/containerd/containerd.sock
 EOF
 
 
-    chmod +x "${ROOT_DIR}/generated/worker_join.sh"
+    chmod +x "${ROOT_DIR}/generated/secrets/worker_join.sh"
+
+
+    log_ok "Worker join command generated."
 
 
 
@@ -88,7 +92,7 @@ EOF
 
     CERT_KEY=$(
         kubeadm init phase upload-certs \
-            --upload-certs 2>&1 \
+        --upload-certs 2>&1 \
         | grep -E '^[a-f0-9]{64}$' \
         | tail -1
     )
@@ -115,7 +119,7 @@ EOF
 
     CONTROL_JOIN=$(
         kubeadm token create \
-            --print-join-command
+        --print-join-command
     )
 
 
@@ -131,12 +135,12 @@ EOF
     cat > "${ROOT_DIR}/generated/controlplane_join.sh" <<EOF
 #!/usr/bin/env bash
 
-set -e
+set -Eeuo pipefail
 
-${CONTROL_JOIN} \\
-    --control-plane \\
-    --certificate-key ${CERT_KEY}
-
+${CONTROL_JOIN} \
+--control-plane \
+--certificate-key ${CERT_KEY} \
+--cri-socket unix:///run/containerd/containerd.sock
 EOF
 
 
@@ -148,7 +152,7 @@ EOF
     # VERIFY FILES
     #############################################
 
-    if [[ ! -f "${ROOT_DIR}/generated/worker_join.sh" ]]; then
+    if [[ ! -f "${ROOT_DIR}/generated/secrets/worker_join.sh" ]]; then
 
         log_error "Worker join script was not created."
         return 1
@@ -163,6 +167,8 @@ EOF
 
     fi
 
+
+
     #############################################
     # DISPLAY JOIN COMMANDS
     #############################################
@@ -171,18 +177,19 @@ EOF
     echo "================================================="
     echo " WORKER NODE JOIN COMMAND"
     echo "================================================="
-    echo
-    cat "${ROOT_DIR}/generated/worker_join.sh"
+    cat "${ROOT_DIR}/generated/secrets/worker_join.sh"
+
+
     echo
     echo "================================================="
-    echo
     echo " CONTROL PLANE JOIN COMMAND"
     echo "================================================="
-    echo
     cat "${ROOT_DIR}/generated/controlplane_join.sh"
+
+
     echo
     echo "================================================="
-    echo
+
 
     log_ok "Join commands generated."
 

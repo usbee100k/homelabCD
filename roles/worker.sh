@@ -162,6 +162,33 @@ join_worker() {
 
     install_containerd
 
+       
+    systemctl enable containerd
+    systemctl restart containerd
+
+
+    for i in {1..30}; do
+
+        if [[ -S /run/containerd/containerd.sock ]]; then
+            log_ok "Containerd socket ready."
+            break
+        fi
+
+        sleep 2
+
+    done
+
+
+    if [[ ! -S /run/containerd/containerd.sock ]]; then
+
+        log_error "Containerd socket missing."
+
+        systemctl status containerd --no-pager
+
+        exit 1
+
+    fi
+
 
     finish_step
 
@@ -381,46 +408,65 @@ join_worker() {
 
     echo
     echo "The worker has joined the cluster."
-    echo "Waiting for the CNI plugin (Cilium) to initialize..."
+    echo "Waiting for Cilium and node networking..."
     echo
 
-    for i in {1..60}; do
 
-        if [[ -f /etc/cni/net.d/05-cilium.conflist ]] || \
-           [[ -f /etc/cni/net.d/10-cilium.conflist ]]; then
+    NODE_NAME="$(hostname)"
 
-            log_ok "Cilium configuration detected."
 
+    for i in {1..120}; do
+
+
+        NODE_READY=$(kubectl get node "${NODE_NAME}" \
+            -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' \
+            2>/dev/null || true)
+
+
+        NETWORK_READY=$(kubectl get node "${NODE_NAME}" \
+            -o jsonpath='{.status.conditions[?(@.type=="NetworkUnavailable")].status}' \
+            2>/dev/null || true)
+
+
+
+        if [[ "${NODE_READY}" == "True" ]] && \
+           [[ "${NETWORK_READY}" != "True" ]]; then
+
+
+            log_ok "CNI network ready."
             break
 
         fi
 
-        sleep 5
+
+
+        echo "Waiting for Cilium... (${i}/120)"
+
+        sleep 10
+
 
     done
 
+
+
+    if [[ "${NODE_READY}" != "True" ]]; then
+
+
+        log_error "Node did not become Ready."
+
+        echo
+        echo "Debug:"
+        echo "kubectl get nodes"
+        echo "kubectl -n kube-system get pods -o wide"
+        echo
+
+
+        exit 1
+
+    fi
+
+
     finish_step
-
-
-
-    #########################################
-    # Final Validation
-    #########################################
-
-    next_step "Worker Validation"
-
-    log_ok "Worker installation complete."
-
-    echo
-    echo "Verify from the control plane:"
-    echo
-    echo "kubectl get nodes"
-    echo
-    echo "The node should transition to Ready once the Cilium pod finishes starting."
-    echo
-
-    finish_step
-
 
 
     log_ok "Worker Node Joined Successfully."
