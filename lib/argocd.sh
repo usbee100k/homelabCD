@@ -350,6 +350,8 @@ sync_gitops_repo() {
     local GITOPS_REPO
 
 
+    # Normalize URL
+
     if [[ "${REPO_URL}" == git@github.com:* ]]; then
         REPO_URL="${REPO_URL#git@github.com:}"
     fi
@@ -367,8 +369,23 @@ sync_gitops_repo() {
     GITOPS_REPO="${REPO_URL##*/}"
 
 
-    log_info "Using GitOps repository:"
-    echo "  git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
+    local SSH_REPO_URL="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
+
+
+    log_info "GitOps repository detected:"
+    echo
+    echo "  ${SSH_REPO_URL}"
+    echo
+
+
+    read -rp "Is this correct? [Y/n]: " CONFIRM
+    CONFIRM="${CONFIRM:-Y}"
+
+
+    if [[ "${CONFIRM}" =~ ^[Nn]$ ]]; then
+        log_error "GitOps repository confirmation failed."
+        return 1
+    fi
 
 
 
@@ -415,6 +432,13 @@ sync_gitops_repo() {
             }
 
     fi
+
+
+    #############################################
+    # Force SSH remote
+    #############################################
+
+    git -C "${GITOPS_DIR}" remote set-url origin "${SSH_REPO_URL}"
 
 
 
@@ -474,7 +498,7 @@ sync_gitops_repo() {
         -m "Update Kubernetes manifests"
 
 
-    git push origin main
+    git push "${SSH_REPO_URL}" main
 
 
     log_ok "GitOps repository updated."
