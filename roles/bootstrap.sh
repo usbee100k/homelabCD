@@ -182,6 +182,8 @@ bootstrap_cluster() {
 
     bootstrap_gitops
 
+    sync_gitops_repo
+
     finish_step
 
 

@@ -316,3 +316,54 @@ bootstrap_gitops() {
     log_ok "GitOps bootstrap complete."
 
 }
+
+
+#############################################
+# Sync manifests into GitOps repo
+#############################################
+
+sync_gitops_repo() {
+
+    log_info "Syncing manifests to GitOps repository..."
+
+    local SRC_DIR="${HOME}/homelabCD"
+    local GITOPS_DIR="${HOME}/homelab-deployment" ### CHANGE TO YOURS
+
+    if [[ ! -d "${GITOPS_DIR}/.git" ]]; then
+        log_error "GitOps repository not found: ${GITOPS_DIR}"
+        return 1
+    fi
+
+    #############################################
+    # Copy manifests
+    #############################################
+
+    rsync -a --delete \
+        --exclude ".git" \
+        --exclude ".github" \
+        --exclude "generated" \
+        --exclude "scripts" \
+        --exclude "*.sh" \
+        "${SRC_DIR}/" "${GITOPS_DIR}/"
+
+    #############################################
+    # Commit if changed
+    #############################################
+
+    cd "${GITOPS_DIR}"
+
+    git add .
+
+    if git diff --cached --quiet; then
+        log_ok "GitOps repository already up-to-date."
+        return 0
+    fi
+
+    git commit -m "Update Kubernetes manifests"
+
+    git push origin main
+
+    log_ok "GitOps repository updated."
+
+}
+
