@@ -145,20 +145,20 @@ install_cilium() {
     #############################################
 
 
-    NODE_INTERFACE=$(ip route | awk '/default/ {print $5; exit}')
+    FACE=$(ip route | awk '/default/ {print $5; exit}')
 
     cilium install \
         --version "${version}" \
         --set kubeProxyReplacement=true \
         --set k8sServiceHost="${VIP_ADDRESS}" \
         --set k8sServicePort=6443 \
-        --set devices="^(en|eth).*" \
+        --set devices="${IFACE}" \
+        --set directRoutingDevice="${IFACE}" \
         --set ipam.mode=kubernetes \
         --set routingMode=tunnel \
         --set tunnelProtocol=vxlan \
         --set autoDirectNodeRoutes=false \
-        --set rollOutCiliumPods=true \
-        --set bpf.masquerade=true \
+        --set rollOutCiliumPods=true
 
 }
 
@@ -172,7 +172,7 @@ wait_for_cilium() {
     log_info "Waiting for Cilium..."
 
 
-    cilium status --wait
+    cilium status --wait --wait-duration 10m
 
 
     log_ok "Cilium Ready."
