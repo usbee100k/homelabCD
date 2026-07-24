@@ -337,41 +337,35 @@ sync_gitops_repo() {
     SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
     #############################################
-    # GitHub information
+    # GitHub repository
     #############################################
 
+    [[ -n "${GITHUB_REPO:-}" ]] || \
+        die "GITHUB_REPO missing"
+
+    local REPO_URL="${GITHUB_REPO}"
     local GITHUB_USER
     local GITOPS_REPO
 
-    while true; do
+    # Convert SSH URL if needed
+    if [[ "${REPO_URL}" == git@github.com:* ]]; then
+        REPO_URL="${REPO_URL#git@github.com:}"
+    fi
 
-        read -rp "GitHub username: " GITHUB_USER
-        read -rp "GitOps repository name: " GITOPS_REPO
+    # Convert HTTPS URL if needed
+    if [[ "${REPO_URL}" == https://github.com/* ]]; then
+        REPO_URL="${REPO_URL#https://github.com/}"
+    fi
 
-        echo
-        echo "Repository:"
-        echo "  git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
-        echo
+    REPO_URL="${REPO_URL%.git}"
 
-        read -rp "Is this correct? [Y/n]: " CONFIRM
-        CONFIRM="${CONFIRM:-Y}"
+    GITHUB_USER="${REPO_URL%%/*}"
+    GITOPS_REPO="${REPO_URL##*/}"
 
-        case "${CONFIRM}" in
-            Y|y)
-                break
-                ;;
-            N|n)
-                echo
-                echo "Let's try again."
-                echo
-                ;;
-            *)
-                echo "Please enter Y or N."
-                ;;
-        esac
-
-    done
-
+    log_info "Using GitOps repository:"
+    echo "  git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
+    
+    
     #############################################
     # Determine real user home
     #############################################
