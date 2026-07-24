@@ -348,61 +348,76 @@ join_worker() {
 
     next_step "Waiting For Kubelet"
 
-
-    log_info "Waiting for kubelet service..."
-
-
     for i in {1..30}; do
 
         if systemctl is-active --quiet kubelet; then
-
+            log_ok "Kubelet running."
             break
-
         fi
 
         sleep 2
 
     done
 
+    if ! systemctl is-active --quiet kubelet; then
+
+        log_error "Kubelet failed to start."
+
+        systemctl status kubelet --no-pager
+
+        exit 1
+
+    fi
 
     finish_step
 
 
 
     #########################################
-    # Validation
+    # Wait For CNI
     #########################################
 
-    next_step "Validating Worker Node"
-
-
-    if systemctl is-active --quiet kubelet; then
-
-        log_ok "Kubelet is running."
-
-    else
-
-        log_error "Kubelet failed to start."
-
-        echo
-        echo "Debug commands:"
-        echo "  systemctl status kubelet"
-        echo "  journalctl -u kubelet -xe"
-        echo
-
-        exit 1
-
-    fi
-
+    next_step "Waiting For CNI Network"
 
     echo
-    log_ok "Worker node successfully joined the cluster."
-    echo
-    echo "Verify the node from a control plane:"
-    echo
-    echo "  kubectl get nodes -o wide"
+    echo "The worker has joined the cluster."
+    echo "Waiting for the CNI plugin (Cilium) to initialize..."
     echo
 
+    for i in {1..60}; do
+
+        if [[ -f /etc/cni/net.d/05-cilium.conflist ]] || \
+           [[ -f /etc/cni/net.d/10-cilium.conflist ]]; then
+
+            log_ok "Cilium configuration detected."
+
+            break
+
+        fi
+
+        sleep 5
+
+    done
+
+    finish_step
+
+
+
+    #########################################
+    # Final Validation
+    #########################################
+
+    next_step "Worker Validation"
+
+    log_ok "Worker installation complete."
+
+    echo
+    echo "Verify from the control plane:"
+    echo
+    echo "kubectl get nodes"
+    echo
+    echo "The node should transition to Ready once the Cilium pod finishes starting."
+    echo
 
     finish_step
 
