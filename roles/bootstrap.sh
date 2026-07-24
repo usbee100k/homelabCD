@@ -182,8 +182,6 @@ bootstrap_cluster() {
 
     bootstrap_gitops
 
-    sync_gitops_repo
-
     finish_step
 
 
@@ -212,6 +210,11 @@ bootstrap_cluster() {
     ensure_github_ssh_access
     
     upload_bootstrap_package
+
+    configure_gitops_repo
+    
+    sync_gitops_repo
+
 
     finish_step
 

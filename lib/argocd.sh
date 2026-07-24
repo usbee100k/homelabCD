@@ -319,6 +319,53 @@ bootstrap_gitops() {
 
 
 #############################################
+# GitHub Configuration
+#############################################
+
+configure_gitops_repo() {
+
+    while true; do
+
+        clear
+
+        echo
+        read -rp "GitHub username: " GITHUB_USERNAME
+        read -rp "GitOps repository: " GITOPS_REPO
+
+        echo
+        echo "Configuration:"
+        echo "  GitHub Username : ${GITHUB_USERNAME}"
+        echo "  GitOps Repo     : ${GITOPS_REPO}"
+        echo
+
+        read -rp "Is this correct? (Y/n): " CONFIRM
+
+        case "${CONFIRM,,}" in
+            ""|y|yes)
+                export GITHUB_USERNAME
+                export GITOPS_REPO
+                break
+                ;;
+            n|no)
+                echo
+                log_warn "Let's try again..."
+                sleep 1
+                ;;
+            *)
+                echo
+                log_warn "Please answer Y or N."
+                sleep 1
+                ;;
+        esac
+
+    done
+
+}
+
+
+
+
+#############################################
 # Sync manifests into GitOps repo
 #############################################
 
@@ -327,18 +374,51 @@ sync_gitops_repo() {
     log_info "Syncing manifests to GitOps repository..."
 
     local SRC_DIR="${HOME}/homelabCD"
-    local GITOPS_DIR="${HOME}/homelab-deployment" ### CHANGE TO YOURS
+
+    #############################################
+    # GitHub information
+    #############################################
+
+    local GITHUB_USER
+    local GITOPS_REPO
+
+    read -rp "GitHub username: " GITHUB_USER
+    read -rp "GitOps repository name: " GITOPS_REPO
+
+    local GITOPS_DIR="${HOME}/${GITOPS_REPO}"
+
+    #############################################
+    # Clone repository if missing
+    #############################################
 
     if [[ ! -d "${GITOPS_DIR}/.git" ]]; then
-        log_error "GitOps repository not found: ${GITOPS_DIR}"
+
+        log_info "Cloning GitOps repository..."
+
+        git clone "git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git" "${GITOPS_DIR}"
+
+    fi
+
+    #############################################
+    # Verify clone succeeded
+    #############################################
+
+    if [[ ! -d "${GITOPS_DIR}/.git" ]]; then
+        log_error "Unable to access GitOps repository."
         return 1
     fi
+
+    #############################################
+    # Update repository
+    #############################################
+
+    git -C "${GITOPS_DIR}" pull --rebase
 
     #############################################
     # Copy manifests
     #############################################
 
-    rsync -a --delete \
+    rsync -av --delete \
         --exclude ".git" \
         --exclude ".github" \
         --exclude "generated" \
@@ -347,7 +427,7 @@ sync_gitops_repo() {
         "${SRC_DIR}/" "${GITOPS_DIR}/"
 
     #############################################
-    # Commit if changed
+    # Commit changes
     #############################################
 
     cd "${GITOPS_DIR}"
