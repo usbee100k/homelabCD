@@ -211,7 +211,6 @@ bootstrap_cluster() {
     
     upload_bootstrap_package
 
-    configure_gitops_repo
     
     sync_gitops_repo
 
