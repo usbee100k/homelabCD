@@ -92,7 +92,7 @@ do
 
     2)
 
-        source "${ROOT_DIR}/roles/controlplane.sh"
+        source "${ROOT_DIR}/roles/control-plane.sh"
 
         ;;
 
