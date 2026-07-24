@@ -330,11 +330,12 @@ sync_gitops_repo() {
     log_info "Syncing manifests to GitOps repository..."
 
     #############################################
-    # Source directory (project root)
+    # Source directory
     #############################################
 
     local SRC_DIR
     SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 
     #############################################
     # GitHub repository
@@ -343,31 +344,36 @@ sync_gitops_repo() {
     [[ -n "${GITHUB_REPO:-}" ]] || \
         die "GITHUB_REPO missing"
 
+
     local REPO_URL="${GITHUB_REPO}"
     local GITHUB_USER
     local GITOPS_REPO
 
-    # Convert SSH URL if needed
+
     if [[ "${REPO_URL}" == git@github.com:* ]]; then
         REPO_URL="${REPO_URL#git@github.com:}"
     fi
 
-    # Convert HTTPS URL if needed
+
     if [[ "${REPO_URL}" == https://github.com/* ]]; then
         REPO_URL="${REPO_URL#https://github.com/}"
     fi
 
+
     REPO_URL="${REPO_URL%.git}"
+
 
     GITHUB_USER="${REPO_URL%%/*}"
     GITOPS_REPO="${REPO_URL##*/}"
 
+
     log_info "Using GitOps repository:"
     echo "  git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
-    
-    
+
+
+
     #############################################
-    # Determine real user home
+    # Real user home
     #############################################
 
     local REAL_USER
@@ -376,68 +382,101 @@ sync_gitops_repo() {
     REAL_USER="${SUDO_USER:-$USER}"
     REAL_HOME="$(getent passwd "${REAL_USER}" | cut -d: -f6)"
 
+
     local GITOPS_DIR="${REAL_HOME}/${GITOPS_REPO}"
 
+
+
     #############################################
-    # Clone repository if missing
+    # Prevent source = destination
+    #############################################
+
+    if [[ "${SRC_DIR}" == "${GITOPS_DIR}" ]]; then
+        log_error "Source repo and GitOps repo are the same directory."
+        log_error "Use a separate GitOps repository."
+        return 1
+    fi
+
+
+
+    #############################################
+    # Clone repository
     #############################################
 
     if [[ ! -d "${GITOPS_DIR}/.git" ]]; then
 
         log_info "Cloning GitOps repository..."
 
-        git clone "git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git" "${GITOPS_DIR}" || {
-            log_error "Failed to clone GitOps repository."
-            return 1
-        }
+        git clone \
+            "git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git" \
+            "${GITOPS_DIR}" || {
+                log_error "Failed to clone GitOps repository."
+                return 1
+            }
 
     fi
 
-    #############################################
-    # Verify repository
-    #############################################
 
-    if [[ ! -d "${GITOPS_DIR}/.git" ]]; then
-        log_error "Unable to access GitOps repository."
-        return 1
-    fi
 
     #############################################
-    # Update repository
+    # Clean and update repo
     #############################################
 
-    git -C "${GITOPS_DIR}" pull --rebase
+    git -C "${GITOPS_DIR}" fetch origin
+
+    git -C "${GITOPS_DIR}" reset --hard origin/main
+
+
 
     #############################################
     # Copy manifests
     #############################################
 
-    rsync -av --delete \
+    rsync -av \
         --exclude ".git" \
         --exclude ".github" \
         --exclude "generated" \
         --exclude "scripts" \
         --exclude "*.sh" \
+        --exclude "secrets/" \
+        --exclude "cluster-info.yaml" \
         "${SRC_DIR}/" "${GITOPS_DIR}/"
+
+
+
+    #############################################
+    # Configure Git identity
+    #############################################
+
+    cd "${GITOPS_DIR}"
+
+
+    git config user.name "${GIT_AUTHOR_NAME:-Homelab Installer}"
+
+    git config user.email "${GIT_AUTHOR_EMAIL:-homelab@localhost}"
+
+
 
     #############################################
     # Commit changes
     #############################################
 
-    cd "${GITOPS_DIR}"
-
     git add .
+
 
     if git diff --cached --quiet; then
         log_ok "GitOps repository already up-to-date."
         return 0
     fi
 
-    git commit -m "Update Kubernetes manifests"
+
+    git commit \
+        -m "Update Kubernetes manifests"
+
 
     git push origin main
+
 
     log_ok "GitOps repository updated."
 
 }
-
