@@ -145,7 +145,7 @@ install_cilium() {
     #############################################
 
 
-
+    NODE_INTERFACE=$(ip route | awk '/default/ {print $5; exit}')
 
     cilium install \
         --version "${version}" \
@@ -157,7 +157,8 @@ install_cilium() {
         --set routingMode=tunnel \
         --set tunnelProtocol=vxlan \
         --set autoDirectNodeRoutes=false \
-        --set rollOutCiliumPods=true
+        --set rollOutCiliumPods=true \
+        --set bpf.masquerade=true \
 
 }
 
