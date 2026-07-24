@@ -290,15 +290,14 @@ join_worker() {
     next_step "Joining Kubernetes Cluster"
 
 
-
     if ! bash "${ROOT_DIR}/generated/secrets/worker_join.sh"; then
 
         log_error "kubeadm join failed."
 
         echo
-        echo "Debug:"
-        echo "systemctl status kubelet"
-        echo "journalctl -u kubelet -xe"
+        echo "Debug commands:"
+        echo "  systemctl status kubelet"
+        echo "  journalctl -u kubelet -xe"
         echo
 
         exit 1
@@ -306,25 +305,31 @@ join_worker() {
     fi
 
 
-
     finish_step
 
 
 
     #########################################
-    # Configure Node
+    # Wait For Kubelet
     #########################################
 
-    next_step "Configuring Worker Node"
+    next_step "Waiting For Kubelet"
 
 
-    register_node
+    log_info "Waiting for kubelet service..."
 
 
-    apply_node_labels
+    for i in {1..30}; do
 
+        if systemctl is-active --quiet kubelet; then
 
-    detect_special_hardware
+            break
+
+        fi
+
+        sleep 2
+
+    done
 
 
     finish_step
@@ -335,22 +340,35 @@ join_worker() {
     # Validation
     #########################################
 
-    next_step "Validating Worker"
+    next_step "Validating Worker Node"
 
 
     if systemctl is-active --quiet kubelet; then
 
-        log_ok "Kubelet running."
+        log_ok "Kubelet is running."
 
     else
 
-        log_error "Kubelet failed."
+        log_error "Kubelet failed to start."
 
-        systemctl status kubelet --no-pager
+        echo
+        echo "Debug commands:"
+        echo "  systemctl status kubelet"
+        echo "  journalctl -u kubelet -xe"
+        echo
 
         exit 1
 
     fi
+
+
+    echo
+    log_ok "Worker node successfully joined the cluster."
+    echo
+    echo "Verify the node from a control plane:"
+    echo
+    echo "  kubectl get nodes -o wide"
+    echo
 
 
     finish_step
