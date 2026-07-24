@@ -182,7 +182,7 @@ create_bootstrap_package() {
 
 
     encrypt_bootstrap_file \
-    "${ROOT_DIR}/generated/worker_join.sh" \
+    "${ROOT_DIR}/generated/secrets/worker_join.sh" \
     "${BOOTSTRAP_DIR}/secrets/worker_join.enc"
 
 
