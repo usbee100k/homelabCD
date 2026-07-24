@@ -369,107 +369,32 @@ join_worker() {
 
 
 
-    #########################################
-    # Wait For Kubelet
-    #########################################
+    #############################################
+    # Verify Worker Join
+    #############################################
 
-    next_step "Waiting For Kubelet"
-
-    for i in {1..30}; do
-
-        if systemctl is-active --quiet kubelet; then
-            log_ok "Kubelet running."
-            break
-        fi
-
-        sleep 2
-
-    done
-
-    if ! systemctl is-active --quiet kubelet; then
-
-        log_error "Kubelet failed to start."
-
-        systemctl status kubelet --no-pager
-
-        exit 1
-
-    fi
-
-    finish_step
-
-
-
-    #########################################
-    # Wait For CNI
-    #########################################
-
-    next_step "Waiting For CNI Network"
+    next_step "Verifying Worker Join"
 
     echo
-    echo "The worker has joined the cluster."
-    echo "Waiting for Cilium and node networking..."
+    echo "Worker joined successfully."
+    echo
+    echo "Node registration will be verified from the control plane."
     echo
 
 
-    NODE_NAME="$(hostname)"
+    if [[ ! -f /etc/kubernetes/kubelet.conf ]]; then
 
-
-    for i in {1..120}; do
-
-
-        NODE_READY=$(kubectl get node "${NODE_NAME}" \
-            -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' \
-            2>/dev/null || true)
-
-
-        NETWORK_READY=$(kubectl get node "${NODE_NAME}" \
-            -o jsonpath='{.status.conditions[?(@.type=="NetworkUnavailable")].status}' \
-            2>/dev/null || true)
-
-
-
-        if [[ "${NODE_READY}" == "True" ]] && \
-           [[ "${NETWORK_READY}" != "True" ]]; then
-
-
-            log_ok "CNI network ready."
-            break
-
-        fi
-
-
-
-        echo "Waiting for Cilium... (${i}/120)"
-
-        sleep 10
-
-
-    done
-
-
-
-    if [[ "${NODE_READY}" != "True" ]]; then
-
-
-        log_error "Node did not become Ready."
-
-        echo
-        echo "Debug:"
-        echo "kubectl get nodes"
-        echo "kubectl -n kube-system get pods -o wide"
-        echo
-
+        log_error "kubelet.conf missing. Worker did not complete join."
 
         exit 1
 
     fi
 
 
+    log_ok "Worker kubelet configuration exists."
+
+
     finish_step
-
-
-    log_ok "Worker Node Joined Successfully."
 
 }
 

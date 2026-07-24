@@ -104,7 +104,9 @@ install_encryption_tools() {
     fi
 
 
+
     echo "[INFO] Installing sops..."
+
 
 
     apt update
@@ -115,6 +117,7 @@ install_encryption_tools() {
     SOPS_VERSION="v3.10.2"
 
 
+
     echo "[INFO] Installing sops ${SOPS_VERSION}..."
 
 
@@ -123,18 +126,14 @@ install_encryption_tools() {
         --fail \
         --location \
         --retry 5 \
-        --connect-timeout 10 \
+        --connect-timeout 20 \
         --max-time 600 \
-        -o /tmp/sops.deb \
-        "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops_${SOPS_VERSION#v}_amd64.deb"
+        -o /usr/local/bin/sops \
+        "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64"
 
 
 
-    dpkg -i /tmp/sops.deb || apt-get install -f -y
-
-
-
-    rm -f /tmp/sops.deb
+    chmod +x /usr/local/bin/sops
 
 
 
