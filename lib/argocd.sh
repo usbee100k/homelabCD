@@ -318,50 +318,6 @@ bootstrap_gitops() {
 }
 
 
-#############################################
-# GitHub Configuration
-#############################################
-
-configure_gitops_repo() {
-
-    while true; do
-
-        clear
-
-        echo
-        read -rp "GitHub username: " GITHUB_USERNAME
-        read -rp "GitOps repository: " GITOPS_REPO
-
-        echo
-        echo "Configuration:"
-        echo "  GitHub Username : ${GITHUB_USERNAME}"
-        echo "  GitOps Repo     : ${GITOPS_REPO}"
-        echo
-
-        read -rp "Is this correct? (Y/n): " CONFIRM
-
-        case "${CONFIRM,,}" in
-            ""|y|yes)
-                export GITHUB_USERNAME
-                export GITOPS_REPO
-                break
-                ;;
-            n|no)
-                echo
-                log_warn "Let's try again..."
-                sleep 1
-                ;;
-            *)
-                echo
-                log_warn "Please answer Y or N."
-                sleep 1
-                ;;
-        esac
-
-    done
-
-}
-
 
 
 
@@ -373,7 +329,12 @@ sync_gitops_repo() {
 
     log_info "Syncing manifests to GitOps repository..."
 
-    local SRC_DIR="${HOME}/homelabCD"
+    #############################################
+    # Source directory (project root)
+    #############################################
+
+    local SRC_DIR
+    SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
     #############################################
     # GitHub information
@@ -382,10 +343,46 @@ sync_gitops_repo() {
     local GITHUB_USER
     local GITOPS_REPO
 
-    read -rp "GitHub username: " GITHUB_USER
-    read -rp "GitOps repository name: " GITOPS_REPO
+    while true; do
 
-    local GITOPS_DIR="${HOME}/${GITOPS_REPO}"
+        read -rp "GitHub username: " GITHUB_USER
+        read -rp "GitOps repository name: " GITOPS_REPO
+
+        echo
+        echo "Repository:"
+        echo "  git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
+        echo
+
+        read -rp "Is this correct? [Y/n]: " CONFIRM
+        CONFIRM="${CONFIRM:-Y}"
+
+        case "${CONFIRM}" in
+            Y|y)
+                break
+                ;;
+            N|n)
+                echo
+                echo "Let's try again."
+                echo
+                ;;
+            *)
+                echo "Please enter Y or N."
+                ;;
+        esac
+
+    done
+
+    #############################################
+    # Determine real user home
+    #############################################
+
+    local REAL_USER
+    local REAL_HOME
+
+    REAL_USER="${SUDO_USER:-$USER}"
+    REAL_HOME="$(getent passwd "${REAL_USER}" | cut -d: -f6)"
+
+    local GITOPS_DIR="${REAL_HOME}/${GITOPS_REPO}"
 
     #############################################
     # Clone repository if missing
@@ -395,12 +392,15 @@ sync_gitops_repo() {
 
         log_info "Cloning GitOps repository..."
 
-        git clone "git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git" "${GITOPS_DIR}"
+        git clone "git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git" "${GITOPS_DIR}" || {
+            log_error "Failed to clone GitOps repository."
+            return 1
+        }
 
     fi
 
     #############################################
-    # Verify clone succeeded
+    # Verify repository
     #############################################
 
     if [[ ! -d "${GITOPS_DIR}/.git" ]]; then
