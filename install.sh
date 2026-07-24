@@ -124,7 +124,7 @@ install_encryption_tools() {
         --location \
         --retry 5 \
         --connect-timeout 10 \
-        --max-time 120 \
+        --max-time 600 \
         -o /tmp/sops.deb \
         "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops_${SOPS_VERSION#v}_amd64.deb"
 
