@@ -111,6 +111,17 @@ join_controlplane() {
 
     finish_step
 
+    #########################################
+    # Retrieve Bootstrap Package
+    #########################################
+
+    next_step "Retrieving Bootstrap Package"
+
+    ensure_github_ssh_access
+
+    download_bootstrap_secrets
+
+    finish_step
 
     #########################################
     # Verify Join Script
@@ -129,16 +140,6 @@ join_controlplane() {
         log_error "Invalid control plane join script."
         exit 1
     fi
-
-    finish_step
-    
-    #########################################
-    # Retrieve Bootstrap Package
-    #########################################
-
-    next_step "Retrieving Bootstrap Package"
-
-    download_bootstrap_secrets
 
     finish_step
 
