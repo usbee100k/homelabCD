@@ -345,47 +345,97 @@ sync_gitops_repo() {
         die "GITHUB_REPO missing"
 
 
-    local REPO_URL="${GITHUB_REPO}"
+    local REPO_URL
     local GITHUB_USER
     local GITOPS_REPO
+    local SSH_REPO_URL
+    local CONFIRM
 
 
-    # Normalize URL
+    while true; do
 
-    if [[ "${REPO_URL}" == git@github.com:* ]]; then
-        REPO_URL="${REPO_URL#git@github.com:}"
-    fi
+        REPO_URL="${GITHUB_REPO}"
 
 
-    if [[ "${REPO_URL}" == https://github.com/* ]]; then
-        REPO_URL="${REPO_URL#https://github.com/}"
-    fi
+        #############################################
+        # Normalize URL
+        #############################################
+
+        if [[ "${REPO_URL}" == git@github.com:* ]]; then
+            REPO_URL="${REPO_URL#git@github.com:}"
+        fi
 
 
-    REPO_URL="${REPO_URL%.git}"
+        if [[ "${REPO_URL}" == https://github.com/* ]]; then
+            REPO_URL="${REPO_URL#https://github.com/}"
+        fi
 
 
-    GITHUB_USER="${REPO_URL%%/*}"
-    GITOPS_REPO="${REPO_URL##*/}"
+        REPO_URL="${REPO_URL%.git}"
 
 
-    local SSH_REPO_URL="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
+        GITHUB_USER="${REPO_URL%%/*}"
+        GITOPS_REPO="${REPO_URL##*/}"
 
 
-    log_info "GitOps repository detected:"
-    echo
-    echo "  ${SSH_REPO_URL}"
-    echo
+        SSH_REPO_URL="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
 
 
-    read -rp "Is this correct? [Y/n]: " CONFIRM
-    CONFIRM="${CONFIRM:-Y}"
+        log_info "GitOps repository detected:"
+        echo
+        echo "  ${SSH_REPO_URL}"
+        echo
 
 
-    if [[ "${CONFIRM}" =~ ^[Nn]$ ]]; then
-        log_error "GitOps repository confirmation failed."
-        return 1
-    fi
+        read -rp "Is this correct? [Y/n]: " CONFIRM
+        CONFIRM="${CONFIRM:-Y}"
+
+
+        case "${CONFIRM}" in
+
+            Y|y)
+                break
+                ;;
+
+            N|n)
+
+                echo
+                echo "Enter the correct GitHub repository:"
+                echo
+
+                read -rp "GitHub username: " GITHUB_USER
+                read -rp "GitHub repository name: " GITOPS_REPO
+
+
+                SSH_REPO_URL="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
+
+
+                echo
+                echo "New GitOps repository:"
+                echo
+                echo "  ${SSH_REPO_URL}"
+                echo
+
+
+                read -rp "Use this repository? [Y/n]: " CONFIRM2
+                CONFIRM2="${CONFIRM2:-Y}"
+
+
+                if [[ "${CONFIRM2}" =~ ^[Yy]$ ]]; then
+
+                    GITHUB_REPO="${SSH_REPO_URL}"
+                    break
+
+                fi
+                ;;
+
+            *)
+                echo "Please answer Y or N."
+                ;;
+
+        esac
+
+    done
 
 
 
