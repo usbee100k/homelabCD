@@ -7,14 +7,18 @@ apply_node_labels() {
 
     case "${NODE_ROLE}" in
 
-        control-plane)
+        controlplane|control-plane|control)
+
+            NODE_ROLE="control-plane"
 
             kubectl label node "${NODE_NAME}" \
                 node-role.kubernetes.io/control-plane="" \
                 --overwrite
             ;;
 
-        worker)
+        worker|worker-node)
+
+            NODE_ROLE="worker"
 
             kubectl label node "${NODE_NAME}" \
                 node-role.kubernetes.io/worker="" \
