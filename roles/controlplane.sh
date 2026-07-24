@@ -17,7 +17,7 @@ fi
 
 source "${ROOT_DIR}/config/defaults.env" 2>/dev/null || true
 
-export NODE_ROLE="${NODE_ROLE:control-plane}"
+export NODE_ROLE="${NODE_ROLE:-control-plane}"
 export KUBERNETES_VERSION="${KUBERNETES_VERSION:-unknown}"
 
 #############################################
