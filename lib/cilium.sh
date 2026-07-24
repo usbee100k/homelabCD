@@ -145,7 +145,7 @@ install_cilium() {
     #############################################
 
 
-    FACE=$(ip route | awk '/default/ {print $5; exit}')
+    IFACE=$(ip route | awk '/default/ {print $5; exit}')
 
     cilium install \
         --version "${version}" \
