@@ -146,14 +146,13 @@ install_cilium() {
 
 
 
-    DEVICE="$(detect_primary_interface)"
 
     cilium install \
         --version "${version}" \
         --set kubeProxyReplacement=true \
         --set k8sServiceHost="${VIP_ADDRESS}" \
         --set k8sServicePort=6443 \
-        --set devices="${DEVICE}" \
+        --set devices=""^(en|eth).*" \
         --set ipam.mode=kubernetes \
         --set routingMode=tunnel \
         --set tunnelProtocol=vxlan \
