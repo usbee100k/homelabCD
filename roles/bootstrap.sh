@@ -178,6 +178,8 @@ bootstrap_cluster() {
 
     generate_argocd_ssh_key
 
+    verify_argocd_github_access
+
     sync_gitops_repo
 
     configure_argocd_repository

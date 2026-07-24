@@ -184,18 +184,16 @@ generate_argocd_ssh_key() {
 
     log_info "Checking Argo CD SSH deploy key"
 
-
     SSH_KEY_PATH="${SSH_KEY_PATH:-/etc/kubernetes/argocd/id_ed25519}"
 
     export SSH_KEY_PATH
-
 
     mkdir -p "$(dirname "${SSH_KEY_PATH}")"
 
 
 
     #############################################
-    # Generate Key If Missing
+    # Generate Key
     #############################################
 
     if [[ ! -f "${SSH_KEY_PATH}" ]]; then
@@ -206,9 +204,7 @@ generate_argocd_ssh_key() {
             -f "${SSH_KEY_PATH}" \
             -C "argocd@${CLUSTER_NAME}"
 
-
         chmod 600 "${SSH_KEY_PATH}"
-
 
         log_ok "Argo CD SSH key generated."
 
@@ -221,12 +217,12 @@ generate_argocd_ssh_key() {
 
 
     #############################################
-    # Verify Public Key Exists
+    # Verify Public Key
     #############################################
 
     if [[ ! -f "${SSH_KEY_PATH}.pub" ]]; then
 
-        log_error "SSH public key missing: ${SSH_KEY_PATH}.pub"
+        log_error "Missing public key: ${SSH_KEY_PATH}.pub"
 
         return 1
 
@@ -235,31 +231,115 @@ generate_argocd_ssh_key() {
 
 
     #############################################
-    # Display Public Key
+    # Display Deploy Key
     #############################################
 
     echo
-    echo "================================================="
-    echo " ADD ARGO CD SSH KEY TO GITHUB"
-    echo "================================================="
+    echo "=========================================================="
+    echo "            ADD THIS DEPLOY KEY TO GITHUB"
+    echo "=========================================================="
     echo
     echo "Repository:"
-    echo "${GITHUB_REPO:-unknown}"
+    echo "  ${GITHUB_REPO}"
     echo
-    echo "Go to:"
-    echo "GitHub → Repository → Settings → Deploy keys → Add deploy key"
+    echo "GitHub:"
+    echo "  Settings"
+    echo "    -> Deploy keys"
+    echo "       -> Add deploy key"
     echo
-    echo "Add this key:"
+    echo "Enable:"
+    echo "  ✓ Allow read access"
     echo
     cat "${SSH_KEY_PATH}.pub"
     echo
-    echo "================================================="
+    echo "=========================================================="
     echo
 
+    read -rp "Press ENTER after adding the deploy key to GitHub..."
 
-    read -rp "Press ENTER after adding the key to GitHub..."
+
+
+    #############################################
+    # Wait Until GitHub Accepts It
+    #############################################
+
+    log_info "Waiting for GitHub to accept deploy key..."
+
+    while true; do
+
+        OUTPUT="$(
+            ssh \
+                -o BatchMode=yes \
+                -o StrictHostKeyChecking=accept-new \
+                -i "${SSH_KEY_PATH}" \
+                -T git@github.com 2>&1 || true
+        )"
+
+        if echo "${OUTPUT}" | grep -q "successfully authenticated"; then
+
+            log_ok "GitHub deploy key verified."
+
+            break
+
+        fi
+
+        echo
+        echo "GitHub is not accepting the deploy key yet."
+        echo
+        echo "If you haven't added it yet, do that now."
+        echo
+        read -rp "Press ENTER to retry..."
+
+    done
 
 }
+
+#############################################
+# VERIFY GITHUB ACCESS
+#############################################
+
+verify_argocd_github_access() {
+
+    log_info "Verifying GitHub deploy key..."
+
+    while true; do
+
+        OUTPUT="$(
+            ssh \
+                -o BatchMode=yes \
+                -o StrictHostKeyChecking=accept-new \
+                -i "${SSH_KEY_PATH}" \
+                -T git@github.com 2>&1 || true
+        )"
+
+        if echo "${OUTPUT}" | grep -q "successfully authenticated"; then
+
+            log_ok "GitHub deploy key verified."
+            break
+
+        fi
+
+        echo
+        echo "================================================="
+        echo " GitHub cannot authenticate this deploy key"
+        echo "================================================="
+        echo
+        echo "Make sure you have:"
+        echo "  1. Added the public key as a Deploy Key"
+        echo "  2. Enabled 'Allow write access'"
+        echo "  3. Saved the Deploy Key"
+        echo
+        echo "Current response:"
+        echo
+        echo "${OUTPUT}"
+        echo
+        read -rp "Press ENTER to retry..."
+
+    done
+
+}
+
+
 
 
 
@@ -269,101 +349,65 @@ generate_argocd_ssh_key() {
 
 configure_argocd_repository() {
 
-    log_info "Configuring Argo CD private repository"
+    log_info "Configuring Argo CD repository..."
 
+    [[ -n "${GITHUB_REPO:-}" ]] || \
+        die "GITHUB_REPO missing"
 
-    local repo_url
+    local REPO_URL="${GITHUB_REPO}"
 
-    repo_url="${GITHUB_REPO}"
+    #############################################
+    # Normalize to SSH URL
+    #############################################
 
-
-
-    if [[ "${repo_url}" == https://github.com/* ]]; then
-
-        repo_url="${repo_url/https:\/\/github.com\//git@github.com:}"
-
+    if [[ "${REPO_URL}" == https://github.com/* ]]; then
+        REPO_URL="${REPO_URL/https:\/\/github.com\//git@github.com:}"
     fi
 
+    REPO_URL="${REPO_URL%.git}.git"
 
+    #############################################
+    # Remove old repository secret
+    #############################################
+
+    kubectl delete secret bootstrap-repository \
+        -n argocd \
+        --ignore-not-found
+
+    #############################################
+    # Create repository secret
+    #############################################
 
     kubectl create secret generic bootstrap-repository \
         -n argocd \
         --from-literal=type=git \
-        --from-literal=url="${repo_url}" \
-        --from-file=sshPrivateKey="${SSH_KEY_PATH}" \
-        --dry-run=client \
-        -o yaml \
-        | kubectl apply -f -
+        --from-literal=url="${REPO_URL}" \
+        --from-file=sshPrivateKey="${SSH_KEY_PATH}"
 
-
+    #############################################
+    # Label as Argo CD repository
+    #############################################
 
     kubectl label secret bootstrap-repository \
         -n argocd \
         argocd.argoproj.io/secret-type=repository \
         --overwrite
 
+    #############################################
+    # Restart repo server so it reloads the key
+    #############################################
 
+    kubectl rollout restart deployment argocd-repo-server \
+        -n argocd
+
+    kubectl rollout status deployment argocd-repo-server \
+        -n argocd \
+        --timeout=120s
 
     log_ok "Argo CD repository configured."
 
 }
 
-
-
-
-#############################################
-# GITOPS BOOTSTRAP
-#############################################
-
-bootstrap_gitops() {
-
-
-    log_info "Bootstrapping GitOps"
-
-
-
-    [[ -n "${GITHUB_REPO:-}" ]] || \
-        die "GITHUB_REPO missing"
-
-
-
-    configure_argocd_repository
-
-
-
-    kubectl apply \
-        -f "${ROOT_DIR}/bootstrap/projects/default-project.yaml"
-
-
-
-    mkdir -p "${ROOT_DIR}/generated"
-
-
-
-    sed \
-        -e "s|REPLACE_REPO_URL|${GITHUB_REPO}|g" \
-        -e "s|REPLACE_BRANCH|${GIT_BRANCH:-main}|g" \
-        "${ROOT_DIR}/bootstrap/root-app.yaml" \
-        > "${ROOT_DIR}/generated/root-app.yaml"
-
-
-
-    kubectl apply \
-        -f "${ROOT_DIR}/generated/root-app.yaml"
-
-
-
-    log_ok "GitOps bootstrap complete."
-
-}
-
-
-
-
-
-#############################################
-# Sync manifests into GitOps repo
-#############################################
 
 sync_gitops_repo() {
 
@@ -376,7 +420,6 @@ sync_gitops_repo() {
     local SRC_DIR
     SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-
     #############################################
     # GitHub repository
     #############################################
@@ -384,18 +427,15 @@ sync_gitops_repo() {
     [[ -n "${GITHUB_REPO:-}" ]] || \
         die "GITHUB_REPO missing"
 
-
     local REPO_URL
     local GITHUB_USER
     local GITOPS_REPO
     local SSH_REPO_URL
     local CONFIRM
 
-
     while true; do
 
         REPO_URL="${GITHUB_REPO}"
-
 
         #############################################
         # Normalize URL
@@ -405,31 +445,24 @@ sync_gitops_repo() {
             REPO_URL="${REPO_URL#git@github.com:}"
         fi
 
-
         if [[ "${REPO_URL}" == https://github.com/* ]]; then
             REPO_URL="${REPO_URL#https://github.com/}"
         fi
 
-
         REPO_URL="${REPO_URL%.git}"
-
 
         GITHUB_USER="${REPO_URL%%/*}"
         GITOPS_REPO="${REPO_URL##*/}"
 
-
         SSH_REPO_URL="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
-
 
         log_info "GitOps repository detected:"
         echo
         echo "  ${SSH_REPO_URL}"
         echo
 
-
         read -rp "Is this correct? [Y/n]: " CONFIRM
         CONFIRM="${CONFIRM:-Y}"
-
 
         case "${CONFIRM}" in
 
@@ -440,71 +473,97 @@ sync_gitops_repo() {
             N|n)
 
                 echo
-                echo "Enter the correct GitHub repository:"
-                echo
-
                 read -rp "GitHub username: " GITHUB_USER
-                read -rp "GitHub repository name: " GITOPS_REPO
-
+                read -rp "Repository name: " GITOPS_REPO
 
                 SSH_REPO_URL="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
 
-
                 echo
-                echo "New GitOps repository:"
-                echo
+                echo "Using:"
                 echo "  ${SSH_REPO_URL}"
                 echo
 
+                read -rp "Use this repository? [Y/n]: " CONFIRM
 
-                read -rp "Use this repository? [Y/n]: " CONFIRM2
-                CONFIRM2="${CONFIRM2:-Y}"
-
-
-                if [[ "${CONFIRM2}" =~ ^[Yy]$ ]]; then
+                if [[ "${CONFIRM:-Y}" =~ ^[Yy]$ ]]; then
 
                     GITHUB_REPO="${SSH_REPO_URL}"
+                    export GITHUB_REPO
+
+                    if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
+
+                        sed -i '/^GITHUB_REPO=/d' \
+                            "${ROOT_DIR}/config/defaults.env"
+
+                        echo "GITHUB_REPO=\"${SSH_REPO_URL}\"" \
+                            >> "${ROOT_DIR}/config/defaults.env"
+
+                        log_ok "defaults.env updated."
+
+                    fi
+
                     break
 
                 fi
                 ;;
 
             *)
+
                 echo "Please answer Y or N."
+
                 ;;
 
         esac
 
     done
 
+    #############################################
+    # Save GitOps Repository
+    #############################################
 
+    if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
+
+        log_info "Updating config/defaults.env"
+
+        # Remove any existing entry
+        sed -i '/^GITHUB_REPO=/d' \
+        "${ROOT_DIR}/config/defaults.env"
+
+        # Write the new repository
+        echo "GITHUB_REPO=\"${SSH_REPO_URL}\"" \
+        >> "${ROOT_DIR}/config/defaults.env"
+
+        # Keep this shell updated too
+        export GITHUB_REPO="${SSH_REPO_URL}"
+
+        log_ok "GITHUB_REPO updated to ${SSH_REPO_URL}"
+
+    fi
 
     #############################################
-    # Real user home
+    # Real user
     #############################################
 
     local REAL_USER
     local REAL_HOME
+    local GITOPS_DIR
 
     REAL_USER="${SUDO_USER:-$USER}"
     REAL_HOME="$(getent passwd "${REAL_USER}" | cut -d: -f6)"
 
-
-    local GITOPS_DIR="${REAL_HOME}/${GITOPS_REPO}"
-
-
+    GITOPS_DIR="${REAL_HOME}/${GITOPS_REPO}"
 
     #############################################
-    # Prevent source = destination
+    # Prevent source == destination
     #############################################
 
     if [[ "${SRC_DIR}" == "${GITOPS_DIR}" ]]; then
+
         log_error "Source repo and GitOps repo are the same directory."
-        log_error "Use a separate GitOps repository."
+
         return 1
+
     fi
-
-
 
     #############################################
     # Clone repository
@@ -514,39 +573,32 @@ sync_gitops_repo() {
 
         log_info "Cloning GitOps repository..."
 
-        git clone \
-            "git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git" \
-            "${GITOPS_DIR}" || {
-                log_error "Failed to clone GitOps repository."
-                return 1
-            }
+        git clone "${SSH_REPO_URL}" "${GITOPS_DIR}" || {
+
+            log_error "Failed to clone GitOps repository."
+
+            return 1
+
+        }
 
     fi
 
-
     #############################################
-    # Force SSH remote
+    # Configure remote
     #############################################
 
     git -C "${GITOPS_DIR}" remote set-url origin "${SSH_REPO_URL}"
 
-
-
-    #############################################
-    # Clean and update repo
-    #############################################
-
     git -C "${GITOPS_DIR}" fetch origin
 
     git -C "${GITOPS_DIR}" reset --hard origin/main
-
-
 
     #############################################
     # Copy manifests
     #############################################
 
     rsync -av \
+        --delete \
         --exclude ".git" \
         --exclude ".github" \
         --exclude "generated" \
@@ -554,43 +606,131 @@ sync_gitops_repo() {
         --exclude "*.sh" \
         --exclude "secrets/" \
         --exclude "cluster-info.yaml" \
-        "${SRC_DIR}/" "${GITOPS_DIR}/"
-
-
+        "${SRC_DIR}/" \
+        "${GITOPS_DIR}/"
 
     #############################################
     # Configure Git identity
     #############################################
 
+    git -C "${GITOPS_DIR}" config user.name \
+        "${GIT_AUTHOR_NAME:-Homelab Installer}"
+
+    git -C "${GITOPS_DIR}" config user.email \
+        "${GIT_AUTHOR_EMAIL:-homelab@localhost}"
+
+    #############################################
+    # Commit
+    #############################################
+
     cd "${GITOPS_DIR}"
-
-
-    git config user.name "${GIT_AUTHOR_NAME:-Homelab Installer}"
-
-    git config user.email "${GIT_AUTHOR_EMAIL:-homelab@localhost}"
-
-
-
-    #############################################
-    # Commit changes
-    #############################################
 
     git add .
 
-
     if git diff --cached --quiet; then
+
         log_ok "GitOps repository already up-to-date."
+
         return 0
+
     fi
 
+    git commit -m "Update Kubernetes manifests"
 
-    git commit \
-        -m "Update Kubernetes manifests"
-
-
-    git push "${SSH_REPO_URL}" main
-
+    git push origin main
 
     log_ok "GitOps repository updated."
+
+}
+
+
+
+#############################################
+# GITOPS BOOTSTRAP
+#############################################
+
+bootstrap_gitops() {
+
+    log_info "Bootstrapping GitOps"
+
+    [[ -n "${GITHUB_REPO:-}" ]] || \
+        die "GITHUB_REPO missing"
+
+
+    #############################################
+    # Generate Argo CD Deploy Key
+    #############################################
+
+    generate_argocd_ssh_key
+
+
+    #############################################
+    # Wait Until User Adds Deploy Key
+    #############################################
+
+    verify_argocd_github_access
+
+
+    #############################################
+    # Configure Repository Secret
+    #############################################
+
+    configure_argocd_repository
+
+
+    #############################################
+    # Restart Repo Server
+    #############################################
+
+    log_info "Restarting Argo CD repo-server..."
+
+    kubectl -n argocd rollout restart deployment argocd-repo-server
+
+    kubectl -n argocd rollout status deployment argocd-repo-server \
+        --timeout=180s
+
+    log_ok "Argo CD repo-server restarted."
+
+
+    #############################################
+    # Install Project
+    #############################################
+
+    kubectl apply \
+        -f "${ROOT_DIR}/bootstrap/projects/default-project.yaml"
+
+
+    #############################################
+    # Generate Root Application
+    #############################################
+
+    mkdir -p "${ROOT_DIR}/generated"
+
+    sed \
+        -e "s|REPLACE_REPO_URL|${GITHUB_REPO}|g" \
+        -e "s|REPLACE_BRANCH|${GIT_BRANCH:-main}|g" \
+        "${ROOT_DIR}/bootstrap/root-app.yaml" \
+        > "${ROOT_DIR}/generated/root-app.yaml"
+
+
+    #############################################
+    # Install Root Application
+    #############################################
+
+    kubectl apply \
+        -f "${ROOT_DIR}/generated/root-app.yaml"
+
+
+    #############################################
+    # Force Initial Refresh
+    #############################################
+
+    kubectl annotate application homelab-root \
+        -n argocd \
+        argocd.argoproj.io/refresh=hard \
+        --overwrite
+
+
+    log_ok "GitOps bootstrap complete."
 
 }
