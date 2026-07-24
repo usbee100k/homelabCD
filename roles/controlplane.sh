@@ -17,8 +17,7 @@ fi
 
 source "${ROOT_DIR}/config/defaults.env" 2>/dev/null || true
 
-export NODE_ROLE="${NODE_ROLE:-controlplane}"
-export NODE_ROLE="control-plane"
+export NODE_ROLE="${NODE_ROLE:-control-plane}"
 export KUBERNETES_VERSION="${KUBERNETES_VERSION:-unknown}"
 
 #############################################
@@ -57,7 +56,16 @@ done
 
 join_controlplane() {
 
-    log_info "Joining additional control plane node"
+    log_info "Joining Kubernetes Control Plane"
+
+    #########################################
+    # Prevent Duplicate Join
+    #########################################
+
+    if [[ -f /etc/kubernetes/admin.conf ]]; then
+        log_warn "This node is already a member of a Kubernetes cluster."
+        exit 0
+    fi
 
     #########################################
     # Validate Host
@@ -70,25 +78,21 @@ join_controlplane() {
     finish_step
 
     #########################################
-    # Host Preparation
+    # Prepare Operating System
     #########################################
 
     next_step "Preparing Operating System"
 
     update_system
-
     disable_swap
-
     configure_kernel_modules
-
     configure_sysctl
-
     mount_bpf
 
     finish_step
 
     #########################################
-    # Container Runtime
+    # Install Container Runtime
     #########################################
 
     next_step "Installing Container Runtime"
@@ -98,7 +102,7 @@ join_controlplane() {
     finish_step
 
     #########################################
-    # Kubernetes Packages
+    # Install Kubernetes Packages
     #########################################
 
     next_step "Installing Kubernetes Packages"
@@ -108,12 +112,32 @@ join_controlplane() {
     finish_step
 
     #########################################
-    # Download Bootstrap Secrets
+    # Retrieve Bootstrap Package
     #########################################
 
-    next_step "Retrieving Cluster Join Credentials"
+    next_step "Retrieving Bootstrap Package"
 
     download_bootstrap_secrets
+
+    finish_step
+
+    #########################################
+    # Verify Join Script
+    #########################################
+
+    next_step "Validating Join Credentials"
+
+    JOIN_SCRIPT="${ROOT_DIR}/generated/secrets/controlplane_join.sh"
+
+    if [[ ! -f "${JOIN_SCRIPT}" ]]; then
+        log_error "Missing control plane join command."
+        exit 1
+    fi
+
+    if ! grep -q "kubeadm join" "${JOIN_SCRIPT}"; then
+        log_error "Invalid control plane join script."
+        exit 1
+    fi
 
     finish_step
 
@@ -123,19 +147,19 @@ join_controlplane() {
 
     next_step "Joining Kubernetes Control Plane"
 
-    if [[ ! -f "${ROOT_DIR}/generated/secrets/controlplane_join.sh" ]]; then
+    bash "${JOIN_SCRIPT}"
 
-        log_error "Missing control plane join command."
+    finish_step
 
-        echo
-        echo "Bootstrap repository did not contain controlplane_join.sh"
-        echo
+    #########################################
+    # Wait For kubelet
+    #########################################
 
-        exit 1
+    next_step "Waiting For kubelet"
 
-    fi
-
-    bash "${ROOT_DIR}/generated/secrets/controlplane_join.sh"
+    until systemctl is-active --quiet kubelet; do
+        sleep 2
+    done
 
     finish_step
 
@@ -146,6 +170,25 @@ join_controlplane() {
     next_step "Configuring kubectl"
 
     configure_kubectl
+
+    finish_step
+
+    #########################################
+    # Wait For Node Registration
+    #########################################
+
+    next_step "Waiting For Node Registration"
+
+    HOSTNAME="$(hostname -s)"
+
+    until kubectl get node "${HOSTNAME}" >/dev/null 2>&1; do
+        sleep 5
+    done
+
+    kubectl wait \
+        --for=condition=Ready \
+        node/"${HOSTNAME}" \
+        --timeout=5m
 
     finish_step
 
@@ -166,27 +209,28 @@ join_controlplane() {
     next_step "Applying Node Labels"
 
     apply_node_labels
-
     detect_special_hardware
 
     finish_step
 
     #########################################
-    # Validate Cluster
+    # Cluster Validation
     #########################################
 
-    next_step "Validating Control Plane"
+    next_step "Validating Cluster"
 
-    kubectl cluster-info
+    kubectl get --raw='/readyz?verbose'
 
-    kubectl get nodes
+    kubectl get nodes -o wide
 
-    kubectl get pods -A
+    kubectl get pods \
+        -n kube-system \
+        -o wide
 
     finish_step
 
     #########################################
-    # Complete
+    # Success
     #########################################
 
     log_ok "Control Plane Joined Successfully."
@@ -196,9 +240,11 @@ join_controlplane() {
     echo
     echo "Node has been:"
     echo " ├── Joined to the Kubernetes control plane"
+    echo " ├── Waited until Ready"
     echo " ├── Registered in cluster inventory"
     echo " ├── Kubernetes labels applied"
-    echo " └── Hardware labels detected"
+    echo " ├── Hardware labels detected"
+    echo " └── Cluster health validated"
     echo
 }
 
