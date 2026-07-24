@@ -91,7 +91,6 @@ install_encryption_tools() {
     fi
 
 
-
     #################################
     # SOPS
     #################################
@@ -105,7 +104,6 @@ install_encryption_tools() {
     fi
 
 
-
     echo "[INFO] Installing sops..."
 
 
@@ -114,18 +112,19 @@ install_encryption_tools() {
 
 
 
-    SOPS_VERSION=$(curl -fsSL \
-        https://api.github.com/repos/getsops/sops/releases/latest \
-        | grep tag_name \
-        | cut -d '"' -f4)
+    SOPS_VERSION="v3.10.2"
+
+
+    echo "[INFO] Installing sops ${SOPS_VERSION}..."
 
 
 
-    [[ -n "${SOPS_VERSION}" ]] || die "Unable to determine SOPS version"
-
-
-
-    curl -fsSL \
+    curl \
+        --fail \
+        --location \
+        --retry 5 \
+        --connect-timeout 10 \
+        --max-time 120 \
         -o /tmp/sops.deb \
         "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops_${SOPS_VERSION#v}_amd64.deb"
 
@@ -147,7 +146,7 @@ install_encryption_tools() {
 
 
 
-    echo "[ OK ] sops installed"
+    echo "[ OK ] sops installed: $(sops --version | head -1)"
 
 }
 
