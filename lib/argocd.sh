@@ -609,6 +609,22 @@ sync_gitops_repo() {
         "${SRC_DIR}/" \
         "${GITOPS_DIR}/"
 
+    ############################################
+    # Replace Template Variables
+    #############################################
+
+    log_info "Updating GitOps manifests"
+
+    find "${GITOPS_DIR}" \
+        -type f \
+        \( -name "*.yaml" -o -name "*.yml" \) \
+        -exec sed -i \
+            -e "s|REPLACE_REPO_URL|${SSH_REPO_URL}|g" \
+            -e "s|REPLACE_BRANCH|${GIT_BRANCH:-main}|g" \
+            {} +
+
+    log_ok "GitOps manifests updated."
+
     #############################################
     # Configure Git identity
     #############################################
@@ -718,7 +734,7 @@ bootstrap_gitops() {
     #############################################
 
     kubectl apply \
-        -f "${ROOT_DIR}/generated/root-app.yaml"
+    -f "${ROOT_DIR}/generated/root-app.yaml"
 
 
     #############################################
