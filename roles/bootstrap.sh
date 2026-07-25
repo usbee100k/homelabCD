@@ -178,6 +178,8 @@ bootstrap_cluster() {
 
     sync_gitops_repo
 
+    configure_gitops_repo_urls
+
     configure_argocd_repository
 
     bootstrap_gitops

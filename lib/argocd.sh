@@ -750,3 +750,23 @@ bootstrap_gitops() {
     log_ok "GitOps bootstrap complete."
 
 }
+
+
+configure_gitops_repo_urls() {
+    local repo_url
+
+    repo_url=$(git -C "$GITOPS_DIR" remote get-url origin)
+
+    echo "Updating GitOps manifests to use:"
+    echo "  $repo_url"
+
+    find "$GITOPS_DIR" \
+        -type f \
+        ! -path "*/.git/*" \
+        -exec sed -i "s|REPLACE_ME|$repo_url|g" {} +
+
+    if grep -R "REPLACE_ME" "$GITOPS_DIR" >/dev/null; then
+        echo "ERROR: One or more REPLACE_ME placeholders remain."
+        exit 1
+    fi
+}
