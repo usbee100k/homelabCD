@@ -134,7 +134,7 @@ disable_swap() {
 
     swapoff -a
 
-    sed -i '/ swap / s/^/#/' /etc/fstab
+    sed -i -E '/^[[:space:]]*[^#].*[[:space:]]swap[[:space:]]/ s/^/#/' /etc/fstab
 
     log_ok "Swap disabled."
 
