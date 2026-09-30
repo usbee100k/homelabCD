@@ -13,7 +13,8 @@ apply_node_labels() {
                 --overwrite
 
             kubectl label node "${NODE_NAME}" \
-                node.kubernetes.io/exclude-from-external-load-balancers-
+                node.kubernetes.io/exclude-from-external-load-balancers- \
+                --ignore-not-found
 
             ;;
 
