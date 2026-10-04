@@ -128,32 +128,16 @@ install_cilium() {
 
 
     #############################################
-    # Skip existing installation
-    #############################################
-
-    if kubectl get daemonset cilium -n kube-system >/dev/null 2>&1; then
-
-        log_ok "Cilium already installed. Skipping."
-        return 0
-
-    fi
-
-
-
-    #############################################
     # Install Cilium
     #############################################
 
-
-    IFACE=$(ip route | awk '/default/ {print $5; exit}')
-
-    cilium install --version "${version}" \
-        --values "${ROOT_DIR}/templates/cilium-values.yaml" \
-        --set-string "k8sServiceHost=${VIP_ADDRESS}" \
-        --set-string "k8sServicePort=6443" \
-        --set-string "kubeProxyReplacement=true" \
-        --set "rollOutPods=true"
-
+cilium install --version "${version}" \
+    --values "${ROOT_DIR}/templates/cilium-values.yaml" \
+    --set-string "k8sServiceHost=${VIP_ADDRESS}" \
+    --set-string "k8sServicePort=6443" \
+    --set kubeProxyReplacement=true \
+    --set rollOutPods=true
+    
 }
 
 
