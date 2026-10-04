@@ -64,6 +64,9 @@ install_argocd() {
         --wait \
         --timeout 15m
 
+    sed "s/__HOSTNAME__/${ARGOCD_DOMAIN}/g" \
+        "${ROOT_DIR}/bootstrap/argocd/ingress.yaml" | kubectl apply -f -
+
     #############################################
     # Wait for CRDs
     #############################################

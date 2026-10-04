@@ -26,3 +26,4 @@ dex:
   enabled: false
 
 notifications:
+  enabled: false
