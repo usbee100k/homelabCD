@@ -4,8 +4,10 @@ k8sServiceHost: 192.168.50.222 ## Change to Your VIP
 
 k8sServicePort: 6443
 
+#CHANGE THIS to 2 WITH: sudo /usr/local/sbin/cilium-operator-scaler.sh   ONCE YOUR 2nd NODE IS
+# JOINED, BUT IS AUTOMATICALLY CHECKED WITH cilium-operator-scaler.sh
 operator:
-  replicas: 2
+  replicas: 1
 
 ipam:
   mode: kubernetes

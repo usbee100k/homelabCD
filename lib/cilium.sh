@@ -127,6 +127,22 @@ install_cilium() {
 
 
     #############################################
+    # Determine Cilium operator replicas
+    #############################################
+
+    READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | \
+        awk '$2 == "Ready" && $0 !~ /SchedulingDisabled/ {count++} END {print count+0}')
+
+    if (( READY_NODES >= 2 )); then
+        OPERATOR_REPLICAS=2
+    else
+        OPERATOR_REPLICAS=1
+    fi
+
+    log_info "Detected ${READY_NODES} Ready node(s); using ${OPERATOR_REPLICAS} Cilium operator replica(s)."
+
+
+    #############################################
     # Install or upgrade Cilium
     #############################################
 
@@ -142,7 +158,8 @@ install_cilium() {
             --set autoDirectNodeRoutes=true \
             --set-string "ipv4NativeRoutingCIDR=10.10.0.0/24" \
             --set bpf.masquerade=true \
-            --set rollOutCiliumPods=true
+            --set rollOutCiliumPods=true \
+            --set "operator.replicas=${OPERATOR_REPLICAS}" 
 
     else
         log_info "Cilium release not found. Installing..."
@@ -153,9 +170,75 @@ install_cilium() {
             --set-string "k8sServicePort=6443" \
             --set kubeProxyReplacement=true \
             --set rollOutPods=true \
+            --set "operator.replicas=${OPERATOR_REPLICAS}" 
 
     fi
     
+}
+
+install_cilium_operator_scaler() {
+    log_info "Installing Cilium operator replica scaler..."
+
+    cat >/usr/local/sbin/cilium-operator-scaler.sh <<'EOF'
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+export KUBECONFIG=/etc/kubernetes/admin.conf
+
+READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | \
+    awk '$2 == "Ready" && $0 !~ /SchedulingDisabled/ {count++} END {print count+0}')
+
+if (( READY_NODES >= 2 )); then
+    DESIRED_REPLICAS=2
+else
+    DESIRED_REPLICAS=1
+fi
+
+CURRENT_REPLICAS=$(kubectl -n kube-system \
+    get deployment cilium-operator \
+    -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+
+if [[ "${CURRENT_REPLICAS}" != "${DESIRED_REPLICAS}" ]]; then
+    logger -t cilium-operator-scaler \
+        "Ready nodes=${READY_NODES}; scaling Cilium operator ${CURRENT_REPLICAS} -> ${DESIRED_REPLICAS}"
+
+    kubectl -n kube-system scale deployment cilium-operator \
+        --replicas="${DESIRED_REPLICAS}"
+fi
+EOF
+
+    chmod +x /usr/local/sbin/cilium-operator-scaler.sh
+
+    cat >/etc/systemd/system/cilium-operator-scaler.service <<'EOF'
+[Unit]
+Description=Cilium Operator Replica Scaler
+After=network-online.target kubelet.service
+Wants=network-online.target
+Requires=kubelet.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cilium-operator-scaler.sh
+EOF
+
+    cat >/etc/systemd/system/cilium-operator-scaler.timer <<'EOF'
+[Unit]
+Description=Automatically scale Cilium Operator replicas based on Ready nodes
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=60s
+Unit=cilium-operator-scaler.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable --now cilium-operator-scaler.timer
+
+    log_ok "Cilium operator replica scaler enabled."
 }
 
 
@@ -172,5 +255,7 @@ wait_for_cilium() {
 
 
     log_ok "Cilium Ready."
+
+    install_cilium_operator_scaler
 
 }
