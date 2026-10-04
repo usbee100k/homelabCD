@@ -307,7 +307,6 @@ source_required "${ROOT_DIR}/config/defaults.env"
 source_optional "${ROOT_DIR}/config/versions.env"
 source_optional "${ROOT_DIR}/config/bootstrap.env"
 source_optional "${ROOT_DIR}/config/encryption.env"
-source_optional "${ROOT_DIR}/config/domains.env"
 
 load_config
 
