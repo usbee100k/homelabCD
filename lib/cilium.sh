@@ -139,7 +139,7 @@ install_cilium() {
             --set-string "k8sServicePort=6443" \
             --set kubeProxyReplacement=true \
             --set rollOutPods=true \
-            --wait
+            
     else
         log_info "Cilium release not found. Installing..."
 
@@ -149,7 +149,7 @@ install_cilium() {
             --set-string "k8sServicePort=6443" \
             --set kubeProxyReplacement=true \
             --set rollOutPods=true \
-            --wait
+
     fi
     
 }
