@@ -2,8 +2,6 @@
 
 CONFIG_FILE="${ROOT_DIR}/config/cluster.yaml"
 
-BASE_DOMAIN=""
-
 load_config() {
 
     CLUSTER_NAME=$(yq '.cluster.name' "${CONFIG_FILE}")
@@ -18,16 +16,19 @@ load_config() {
 
     GITHUB_REPO=$(yq '.github.repo' "${CONFIG_FILE}")
 
-    BASE_DOMAIN=$(yq '.base.domain' "${CONFIG_FILE}")
+    BASE_DOMAIN=$(yq '.domains.base' "${CONFIG_FILE}")
 
 
     if [[ "${GITHUB_REPO}" == "null" ]]; then
         GITHUB_REPO=""
     fi
 
-    if [[ "${ARGOCD_DOMAIN}" == "null" ]]; then
-        ARGOCD_DOMAIN=""
+
+    if [[ "${BASE_DOMAIN}" == "null" ]]; then
+        BASE_DOMAIN=""
     fi
+
+    export BASE_DOMAIN
 }
 
 
@@ -38,6 +39,6 @@ save_config() {
         "${CONFIG_FILE}"
 
     yq -i \
-        ".argocd.domain = \"${ARGOCD_DOMAIN}\"" \
+        ".domains.base = \"${BASE_DOMAIN}\"" \
         "${CONFIG_FILE}"
 }
