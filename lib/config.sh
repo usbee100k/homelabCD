@@ -2,7 +2,7 @@
 
 CONFIG_FILE="${ROOT_DIR}/config/cluster.yaml"
 
-BASE_DOMAIN= ""
+BASE_DOMAIN=""
 
 load_config() {
 
