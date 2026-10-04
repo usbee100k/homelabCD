@@ -147,16 +147,12 @@ install_cilium() {
 
     IFACE=$(ip route | awk '/default/ {print $5; exit}')
 
-    cilium install \
-        --version "${version}" \
-        --set kubeProxyReplacement=true \
-        --set k8sServiceHost="${VIP_ADDRESS}" \
-        --set k8sServicePort=6443 \
-        --set ipam.mode=kubernetes \
-        --set routingMode=tunnel \
-        --set tunnelProtocol=vxlan \
-        --set autoDirectNodeRoutes=false \
-        --set rollOutCiliumPods=true
+    cilium install --version "${version}" \
+        --values "${ROOT_DIR}/templates/cilium-values.yaml" \
+        --set-string "k8sServiceHost=${VIP_ADDRESS}" \
+        --set-string "k8sServicePort=6443" \
+        --set-string "kubeProxyReplacement=true" \
+        --set "rollOutPods=true"
 
 }
 
