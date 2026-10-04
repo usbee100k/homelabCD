@@ -126,17 +126,31 @@ install_cilium() {
     fi
 
 
-
     #############################################
-    # Install Cilium
+    # Install or upgrade Cilium
     #############################################
 
-cilium install --version "${version}" \
-    --values "${ROOT_DIR}/templates/cilium-values.yaml" \
-    --set-string "k8sServiceHost=${VIP_ADDRESS}" \
-    --set-string "k8sServicePort=6443" \
-    --set kubeProxyReplacement=true \
-    --set rollOutPods=true
+    if helm status cilium -n kube-system >/dev/null 2>&1; then
+        log_info "Cilium release already exists. Upgrading with current values..."
+
+        cilium upgrade --version "${version}" \
+            --values "${ROOT_DIR}/templates/cilium-values.yaml" \
+            --set-string "k8sServiceHost=${VIP_ADDRESS}" \
+            --set-string "k8sServicePort=6443" \
+            --set kubeProxyReplacement=true \
+            --set rollOutPods=true \
+            --wait
+    else
+        log_info "Cilium release not found. Installing..."
+
+        cilium install --version "${version}" \
+            --values "${ROOT_DIR}/templates/cilium-values.yaml" \
+            --set-string "k8sServiceHost=${VIP_ADDRESS}" \
+            --set-string "k8sServicePort=6443" \
+            --set kubeProxyReplacement=true \
+            --set rollOutPods=true \
+            --wait
+    fi
     
 }
 
