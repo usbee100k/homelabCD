@@ -214,6 +214,12 @@ join_worker() {
 
     next_step "Retrieving Cluster Join Credentials"
 
+    if [[ -f "${ROOT_DIR}/generated/secrets/worker_join.sh" ]]; then
+        log_ok "Using join credentials copied from the bootstrap node."
+        chmod +x "${ROOT_DIR}/generated/secrets/worker_join.sh"
+        finish_step
+    else
+
 
     #########################################
     # Bootstrap Repository

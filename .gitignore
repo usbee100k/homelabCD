@@ -142,3 +142,10 @@ crash.log
 
 test-output/
 sandbox/
+
+#############################################
+# KubesTUI build artifacts
+#############################################
+
+bin/
+.src/

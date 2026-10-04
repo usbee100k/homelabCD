@@ -2,14 +2,16 @@
 
 set -Eeuo pipefail
 
+
 #############################################
 # ARGO CD INSTALLATION
 #############################################
 
-
 install_argocd() {
 
     log_info "Installing Argo CD"
+
+    ARGOCD_DOMAIN="argocd.${BASE_DOMAIN}"
 
     kubectl create namespace argocd \
         --dry-run=client \
@@ -44,19 +46,21 @@ install_argocd() {
 
         elif [[ "${STATUS}" == "deployed" ]]; then
 
-            log_ok "Argo CD already installed."
-            return 0
+            log_info "Argo CD already installed. Applying current configuration..."
 
         fi
     fi
 
     #############################################
-    # Install
+    # Install / Upgrade
     #############################################
 
     helm upgrade --install argocd argo/argo-cd \
         --namespace argocd \
         --create-namespace \
+        --values "${ROOT_DIR}/bootstrap/argocd/values.yaml" \
+        --set-string "global.domain=${ARGOCD_DOMAIN}" \
+        --set-string "configs.cm.url=https://${ARGOCD_DOMAIN}" \
         --wait \
         --timeout 15m
 
@@ -85,10 +89,13 @@ install_argocd() {
     # Verify resources actually exist
     #############################################
 
-    kubectl get deployment argocd-server -n argocd >/dev/null
-    kubectl get deployment argocd-repo-server -n argocd >/dev/null
+    kubectl get deployment argocd-server \
+        -n argocd >/dev/null
 
-    log_ok "Argo CD installed."
+    kubectl get deployment argocd-repo-server \
+        -n argocd >/dev/null
+
+    log_ok "Argo CD installed/configured."
 }
 
 #############################################
@@ -408,6 +415,9 @@ configure_argocd_repository() {
 
 }
 
+#############################################
+# SYNC GITOPS REPOSITORY
+#############################################
 
 sync_gitops_repo() {
 
@@ -473,6 +483,7 @@ sync_gitops_repo() {
             N|n)
 
                 echo
+
                 read -rp "GitHub username: " GITHUB_USER
                 read -rp "Repository name: " GITOPS_REPO
 
@@ -503,14 +514,12 @@ sync_gitops_repo() {
                     fi
 
                     break
-
                 fi
+
                 ;;
 
             *)
-
                 echo "Please answer Y or N."
-
                 ;;
 
         esac
@@ -525,15 +534,12 @@ sync_gitops_repo() {
 
         log_info "Updating config/defaults.env"
 
-        # Remove any existing entry
         sed -i '/^GITHUB_REPO=/d' \
-        "${ROOT_DIR}/config/defaults.env"
+            "${ROOT_DIR}/config/defaults.env"
 
-        # Write the new repository
         echo "GITHUB_REPO=\"${SSH_REPO_URL}\"" \
-        >> "${ROOT_DIR}/config/defaults.env"
+            >> "${ROOT_DIR}/config/defaults.env"
 
-        # Keep this shell updated too
         export GITHUB_REPO="${SSH_REPO_URL}"
 
         log_ok "GITHUB_REPO updated to ${SSH_REPO_URL}"
@@ -546,12 +552,16 @@ sync_gitops_repo() {
 
     local REAL_USER
     local REAL_HOME
-    local GITOPS_DIR
 
     REAL_USER="${SUDO_USER:-$USER}"
     REAL_HOME="$(getent passwd "${REAL_USER}" | cut -d: -f6)"
 
+    #############################################
+    # GitOps directory
+    #############################################
+
     GITOPS_DIR="${REAL_HOME}/${GITOPS_REPO}"
+    export GITOPS_DIR
 
     #############################################
     # Prevent source == destination
@@ -573,12 +583,13 @@ sync_gitops_repo() {
 
         log_info "Cloning GitOps repository..."
 
-        git clone "${SSH_REPO_URL}" "${GITOPS_DIR}" || {
+        git clone \
+            "${SSH_REPO_URL}" \
+            "${GITOPS_DIR}" || {
 
             log_error "Failed to clone GitOps repository."
 
             return 1
-
         }
 
     fi
@@ -587,15 +598,19 @@ sync_gitops_repo() {
     # Configure remote
     #############################################
 
-    git -C "${GITOPS_DIR}" remote set-url origin "${SSH_REPO_URL}"
+    git -C "${GITOPS_DIR}" \
+        remote set-url origin "${SSH_REPO_URL}"
 
     git -C "${GITOPS_DIR}" fetch origin
 
-    git -C "${GITOPS_DIR}" reset --hard origin/main
+    git -C "${GITOPS_DIR}" reset --hard \
+        "origin/${GIT_BRANCH:-main}"
 
     #############################################
     # Copy manifests
     #############################################
+
+    log_info "Copying manifests..."
 
     rsync -av \
         --delete \
@@ -609,11 +624,11 @@ sync_gitops_repo() {
         "${SRC_DIR}/" \
         "${GITOPS_DIR}/"
 
-    ############################################
-    # Replace Template Variables
+    #############################################
+    # Replace template variables
     #############################################
 
-    log_info "Updating GitOps manifests"
+    log_info "Updating GitOps manifests..."
 
     find "${GITOPS_DIR}" \
         -type f \
@@ -622,6 +637,12 @@ sync_gitops_repo() {
             -e "s|REPLACE_REPO_URL|${SSH_REPO_URL}|g" \
             -e "s|REPLACE_BRANCH|${GIT_BRANCH:-main}|g" \
             {} +
+
+    #############################################
+    # Render ingress hostnames
+    #############################################
+
+    render_gitops_ingresses
 
     log_ok "GitOps manifests updated."
 
@@ -639,11 +660,9 @@ sync_gitops_repo() {
     # Commit
     #############################################
 
-    cd "${GITOPS_DIR}"
+    git -C "${GITOPS_DIR}" add .
 
-    git add .
-
-    if git diff --cached --quiet; then
+    if git -C "${GITOPS_DIR}" diff --cached --quiet; then
 
         log_ok "GitOps repository already up-to-date."
 
@@ -651,14 +670,18 @@ sync_gitops_repo() {
 
     fi
 
-    git commit -m "Update Kubernetes manifests"
+    git -C "${GITOPS_DIR}" commit \
+        -m "Update Kubernetes manifests"
 
-    git push origin main
+    #############################################
+    # Push
+    #############################################
+
+    git -C "${GITOPS_DIR}" push \
+        origin "${GIT_BRANCH:-main}"
 
     log_ok "GitOps repository updated."
-
 }
-
 
 
 #############################################
@@ -672,13 +695,11 @@ bootstrap_gitops() {
     [[ -n "${GITHUB_REPO:-}" ]] || \
         die "GITHUB_REPO missing"
 
-
     #############################################
     # Generate Argo CD Deploy Key
     #############################################
 
     generate_argocd_ssh_key
-
 
     #############################################
     # Wait Until User Adds Deploy Key
@@ -686,13 +707,11 @@ bootstrap_gitops() {
 
     verify_argocd_github_access
 
-
     #############################################
     # Configure Repository Secret
     #############################################
 
     configure_argocd_repository
-
 
     #############################################
     # Restart Repo Server
@@ -700,13 +719,14 @@ bootstrap_gitops() {
 
     log_info "Restarting Argo CD repo-server..."
 
-    kubectl -n argocd rollout restart deployment argocd-repo-server
+    kubectl -n argocd rollout restart \
+        deployment argocd-repo-server
 
-    kubectl -n argocd rollout status deployment argocd-repo-server \
+    kubectl -n argocd rollout status \
+        deployment argocd-repo-server \
         --timeout=180s
 
     log_ok "Argo CD repo-server restarted."
-
 
     #############################################
     # Install Project
@@ -714,7 +734,6 @@ bootstrap_gitops() {
 
     kubectl apply \
         -f "${ROOT_DIR}/bootstrap/projects/default-project.yaml"
-
 
     #############################################
     # Generate Root Application
@@ -728,14 +747,12 @@ bootstrap_gitops() {
         "${ROOT_DIR}/bootstrap/root-app.yaml" \
         > "${ROOT_DIR}/generated/root-app.yaml"
 
-
     #############################################
     # Install Root Application
     #############################################
 
     kubectl apply \
-    -f "${ROOT_DIR}/generated/root-app.yaml"
-
+        -f "${ROOT_DIR}/generated/root-app.yaml"
 
     #############################################
     # Force Initial Refresh
@@ -746,27 +763,5 @@ bootstrap_gitops() {
         argocd.argoproj.io/refresh=hard \
         --overwrite
 
-
     log_ok "GitOps bootstrap complete."
-
-}
-
-
-configure_gitops_repo_urls() {
-    local repo_url
-
-    repo_url=$(git -C "$GITOPS_DIR" remote get-url origin)
-
-    echo "Updating GitOps manifests to use:"
-    echo "  $repo_url"
-
-    find "$GITOPS_DIR" \
-        -type f \
-        ! -path "*/.git/*" \
-        -exec sed -i "s|REPLACE_ME|$repo_url|g" {} +
-
-    if grep -R "REPLACE_ME" "$GITOPS_DIR" >/dev/null; then
-        echo "ERROR: One or more REPLACE_ME placeholders remain."
-        exit 1
-    fi
 }

@@ -1,0 +1,22 @@
+ingresses:
+
+  - name: argocd
+    path: apps/websites/ingress.yaml
+    subdomain: argocd
+
+  - name: rancher
+    path: apps/infrastructure/rancher/resources/ingress.yaml
+    subdomain: rancher
+
+  - name: longhorn
+    path: apps/infrastructure/longhorn/resources/ingress.yaml
+    subdomain: longhorn
+
+  - name: qbittorrent
+    path: apps/infrastructure/qbittorrent/resources/ingress.yaml
+    subdomain: qbittorrent
+
+# ADDING NEW ONES EXAMPLE:
+#  - name: grafana
+#    path: apps/infrastructure/monitoring/resources/grafana-ingress.yaml
+#    subdomain: grafana

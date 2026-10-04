@@ -1,9 +1,11 @@
 global:
-  domain: argocd.local
+  domain: argocd.example.com
 
 configs:
   params:
     server.insecure: true
+  cm:
+    url: https://argocd.example.com
 
 controller:
   replicas: 1
@@ -24,4 +26,3 @@ dex:
   enabled: false
 
 notifications:
-  enabled: false

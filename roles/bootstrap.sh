@@ -41,6 +41,7 @@ LIBRARIES=(
     helm
     cilium
     argocd
+    domains
     inventory
     node-labels
     hardware-labels
@@ -49,6 +50,7 @@ LIBRARIES=(
     bootstrap-download
     secrets
     health
+    kubestui
 )
 
 
@@ -74,6 +76,17 @@ bootstrap_cluster() {
 
     log_info "Starting Kubernetes cluster bootstrap"
 
+    next_step "Installing KubesTUI"
+
+    install_kubestui
+
+    finish_step
+
+    #############################################
+    # Configure Base Domain
+    #############################################
+
+    configure_base_domain
 
 
     next_step "Validating Host"

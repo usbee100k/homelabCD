@@ -5,7 +5,7 @@ kubernetes:
   version: "1.36.2"
 
 network:
-  vip: "192.168.50.222" ## Change to yours
+  vip: "192.168.50.222" ## Change to your own VIP of choosing
   podSubnet: "10.0.0.0/16"
   serviceSubnet: "10.96.0.0/12"
   dnsDomain: "cluster.local"
@@ -14,8 +14,8 @@ github:
   repo: ""
   branch: "main"
 
-argocd:
-  namespace: "argocd"
+domains:
+  base: ""
 
 features:
   cilium: true

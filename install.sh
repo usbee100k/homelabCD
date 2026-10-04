@@ -17,6 +17,9 @@ trap 'echo >&2 "[ERROR] ${BASH_SOURCE[0]}:${LINENO}: ${BASH_COMMAND}"; exit 1' E
 readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export ROOT_DIR
 
+readonly INSTALLER_MODE="${1:-}"
+readonly INSTALLER_OP="${2:-}"
+
 
 
 #############################################
@@ -196,6 +199,8 @@ LIBRARIES=(
     bootstrap-secrets
     bootstrap-upload
     bootstrap-download
+    kubestui
+    remote-join
 )
 
 
@@ -302,6 +307,7 @@ source_required "${ROOT_DIR}/config/defaults.env"
 source_optional "${ROOT_DIR}/config/versions.env"
 source_optional "${ROOT_DIR}/config/bootstrap.env"
 source_optional "${ROOT_DIR}/config/encryption.env"
+source_optional "${ROOT_DIR}/config/domains.env"
 
 load_config
 
@@ -315,4 +321,57 @@ load_config
 # Launch Installer
 #############################################
 
+export CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-containerd}"
+export CNI="${CNI:-cilium}"
+
+if [[ "${INSTALLER_MODE}" == "--run" ]]; then
+    case "${INSTALLER_OP}" in
+        bootstrap)
+            source "${ROOT_DIR}/roles/bootstrap.sh"
+            ;;
+        controlplane)
+            source "${ROOT_DIR}/roles/controlplane.sh"
+            ;;
+        worker)
+            source "${ROOT_DIR}/roles/worker.sh"
+            ;;
+        remote-worker)
+            remote_join_node worker
+            ;;
+        remote-controlplane)
+            remote_join_node controlplane
+            ;;
+        repair)
+            repair_node
+            ;;
+        join-commands)
+            generate_join_commands
+            ;;
+        health)
+            cluster_health
+            ;;
+        config)
+            kubectl -n kube-system get cm kubeadm-config -o yaml
+            ;;
+        *)
+            die "Unknown installer operation: ${INSTALLER_OP:-<empty>}"
+            ;;
+    esac
+    exit 0
+fi
+
+install_kubestui || log_warn "KubesTUI install failed; falling back to text menu."
+
+export HOMELABCD_ROOT="${ROOT_DIR}"
+export HOMELABCD_INSTALL="${ROOT_DIR}/install.sh"
+export CLUSTER_NAME="${CLUSTER_NAME:-homelab}"
+export KUBERNETES_VERSION="${KUBERNETES_VERSION:-unknown}"
+export VIP_ADDRESS="${VIP_ADDRESS:-unknown}"
+export CONTAINER_RUNTIME CNI ROOT_DIR
+
+if [[ -x "${ROOT_DIR}/bin/kubestui" ]]; then
+    exec "${ROOT_DIR}/bin/kubestui"
+fi
+
+log_warn "KubesTUI binary not found; using text menu."
 main_menu
