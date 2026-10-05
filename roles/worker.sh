@@ -314,6 +314,8 @@ join_worker() {
 
     finish_step
 
+    fi
+
 
     if [[ -f /etc/kubernetes/kubelet.conf ]]; then
 
