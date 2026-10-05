@@ -9,8 +9,9 @@ download_bootstrap_secrets() {
     # Determine local encrypted package
     #############################################
 
-    local BOOTSTRAP_PACKAGE_DIR
-    BOOTSTRAP_PACKAGE_DIR="${BOOTSTRAP_PACKAGE_DIR:-${ROOT_DIR}/generated/bootstrap}"
+    # Declare and assign in one statement. A separate "local VAR" first would
+    # shadow the exported BOOTSTRAP_PACKAGE_DIR with an empty value.
+    local BOOTSTRAP_PACKAGE_DIR="${BOOTSTRAP_PACKAGE_DIR:-${ROOT_DIR}/generated/bootstrap}"
 
     local TEMP_DIR=""
     local ENCRYPTED_FILE=""
@@ -56,6 +57,14 @@ download_bootstrap_secrets() {
 
         log_info "Using local encrypted bootstrap package:"
         log_info "${ENCRYPTED_FILE}"
+
+    elif [[ "${HOMELAB_REMOTE_MODE:-false}" == "true" ]]; then
+
+        log_error "Remote mode: encrypted bootstrap package not found:"
+        log_error "${ENCRYPTED_FILE}"
+        log_error "Run Bootstrap New Cluster first so generated/bootstrap exists."
+
+        return 1
 
     else
 

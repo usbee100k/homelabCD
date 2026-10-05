@@ -214,88 +214,92 @@ join_worker() {
 
     next_step "Retrieving Cluster Join Credentials"
 
-    if [[ -f "${ROOT_DIR}/generated/secrets/worker_join.sh" ]]; then
-        log_ok "Using join credentials copied from the bootstrap node."
-        chmod +x "${ROOT_DIR}/generated/secrets/worker_join.sh"
-        finish_step
-    else
+    if [[ "${HOMELAB_REMOTE_MODE:-false}" == "true" ]]; then
 
+        #####################################
+        # Remote mode (launched by KubesTUI)
+        # Bootstrap package was copied over SSH, so no GitHub access is needed.
+        #####################################
 
-    #########################################
-    # Bootstrap Repository
-    #########################################
+        log_info "Remote mode detected."
 
-    if [[ -z "${BOOTSTRAP_REPO:-}" ]]; then
+        if [[ -z "${BOOTSTRAP_PACKAGE_DIR:-}" || ! -d "${BOOTSTRAP_PACKAGE_DIR}" ]]; then
 
-
-        echo
-        echo "================================================="
-        echo " Bootstrap Repository Required"
-        echo "================================================="
-        echo
-        echo "Example:"
-        echo "git@github.com:user/bootstrap-repo.git"
-        echo
-
-
-        read -rp "Enter Bootstrap Git Repository URL: " BOOTSTRAP_REPO
-
-
-        if [[ -z "${BOOTSTRAP_REPO}" ]]; then
-
-            log_error "Bootstrap repository cannot be empty."
+            log_error "Bootstrap package not found: ${BOOTSTRAP_PACKAGE_DIR:-<unset>}"
 
             exit 1
 
         fi
 
+        log_info "Using bootstrap package transferred by KubesTUI."
 
-        export BOOTSTRAP_REPO
+        export BOOTSTRAP_PACKAGE_DIR
 
+        download_bootstrap_secrets
 
+    elif [[ -f "${ROOT_DIR}/generated/secrets/worker_join.sh" ]]; then
 
-        if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
+        log_ok "Using join credentials copied from the bootstrap node."
 
+    else
 
-            sed -i \
-                '/^BOOTSTRAP_REPO=/d' \
-                "${ROOT_DIR}/config/defaults.env"
+        #####################################
+        # Bootstrap Repository
+        #####################################
 
+        if [[ -z "${BOOTSTRAP_REPO:-}" ]]; then
 
-            echo "BOOTSTRAP_REPO=\"${BOOTSTRAP_REPO}\"" \
-                >> "${ROOT_DIR}/config/defaults.env"
+            echo
+            echo "================================================="
+            echo " Bootstrap Repository Required"
+            echo "================================================="
+            echo
+            echo "Example:"
+            echo "git@github.com:user/bootstrap-repo.git"
+            echo
 
+            read -rp "Enter Bootstrap Git Repository URL: " BOOTSTRAP_REPO
 
-            log_ok "Bootstrap repository saved."
+            if [[ -z "${BOOTSTRAP_REPO}" ]]; then
+
+                log_error "Bootstrap repository cannot be empty."
+
+                exit 1
+
+            fi
+
+            export BOOTSTRAP_REPO
+
+            if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
+
+                sed -i \
+                    '/^BOOTSTRAP_REPO=/d' \
+                    "${ROOT_DIR}/config/defaults.env"
+
+                echo "BOOTSTRAP_REPO=\"${BOOTSTRAP_REPO}\"" \
+                    >> "${ROOT_DIR}/config/defaults.env"
+
+                log_ok "Bootstrap repository saved."
+
+            fi
 
         fi
 
+        #####################################
+        # GitHub SSH Access
+        #####################################
+
+        log_info "Verifying GitHub SSH Access"
+
+        ensure_github_ssh_access
+
+        #####################################
+        # Download Bootstrap Secrets
+        #####################################
+
+        download_bootstrap_secrets
 
     fi
-
-
-
-    #########################################
-    # GitHub SSH Access
-    #########################################
-
-    next_step "Verifying GitHub SSH Access"
-
-
-    ensure_github_ssh_access
-
-
-    finish_step
-
-
-
-    #########################################
-    # Download Bootstrap Secrets
-    #########################################
-
-    download_bootstrap_secrets
-
-
 
 
     if [[ ! -f "${ROOT_DIR}/generated/secrets/worker_join.sh" ]]; then
@@ -307,14 +311,11 @@ join_worker() {
     fi
 
 
-
     chmod +x \
         "${ROOT_DIR}/generated/secrets/worker_join.sh"
 
 
     finish_step
-
-    fi
 
 
     if [[ -f /etc/kubernetes/kubelet.conf ]]; then
