@@ -6,7 +6,7 @@ set -Eeuo pipefail
 # NODE LABELS
 #############################################
 
-configure_node_labels() {
+apply_node_labels() {
 
     log_info "Configuring node labels..."
 

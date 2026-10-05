@@ -2,115 +2,76 @@
 
 
 #############################################
-# ENSURE GITHUB SSH ACCESS
+# VERIFY SELECTED GITHUB REPOSITORY ACCESS
 #############################################
 
 ensure_github_ssh_access() {
 
-    SSH_DIR="${HOME}/.ssh"
-    SSH_KEY="${SSH_DIR}/id_ed25519"
-    SSH_PUB="${SSH_KEY}.pub"
+    log_info "Verifying selected GitHub repository access"
 
-    export GIT_SSH_COMMAND="ssh -i ${SSH_KEY} -o IdentitiesOnly=yes"
+    #############################################
+    # Validate repository
+    #############################################
 
+    [[ -n "${BOOTSTRAP_REPO:-}" ]] || {
+        log_error "BOOTSTRAP_REPO is not set."
+        return 1
+    }
 
-    mkdir -p "${SSH_DIR}"
-    chmod 700 "${SSH_DIR}"
+    #############################################
+    # Validate deploy key
+    #############################################
 
+    [[ -n "${SSH_KEY_PATH:-}" ]] || {
+        log_error "SSH_KEY_PATH is not set."
+        return 1
+    }
 
-    # Generate SSH key if missing
-    if [[ ! -f "${SSH_KEY}" ]]; then
-
-        log_info "No SSH key found. Generating GitHub SSH key..."
-
-        ssh-keygen \
-            -t ed25519 \
-            -C "$(hostname)" \
-            -f "${SSH_KEY}" \
-            -N ""
-
-        chmod 600 "${SSH_KEY}"
-        chmod 644 "${SSH_PUB}"
-
+    if [[ ! -f "${SSH_KEY_PATH}" ]]; then
+        log_error "Deploy key does not exist:"
+        log_error "${SSH_KEY_PATH}"
+        return 1
     fi
 
-    
-    # Add github host key
-    ssh-keyscan github.com >> "${SSH_DIR}/known_hosts" 2>/dev/null
-    chmod 600 "${SSH_DIR}/known_hosts"
+    #############################################
+    # SSH command
+    #############################################
 
+    export GIT_SSH_COMMAND="ssh \
+-o BatchMode=yes \
+-o StrictHostKeyChecking=accept-new \
+-o IdentitiesOnly=yes \
+-i ${SSH_KEY_PATH}"
 
-     # Test first - if already working, do nothing
-    log_info "Testing GitHub SSH authentication"
+    #############################################
+    # Test repository access
+    #############################################
 
+    log_info "Testing access to:"
+    log_info "${BOOTSTRAP_REPO}"
 
-    SSH_TEST=$(ssh -T git@github.com 2>&1 || true)
+    if GIT_SSH_COMMAND="${GIT_SSH_COMMAND}" \
+        git ls-remote "${BOOTSTRAP_REPO}" HEAD >/dev/null 2>&1; then
 
+        log_ok "GitHub repository access verified."
 
-    if [[ "${SSH_TEST}" == *"successfully authenticated"* ]]; then
-
-        log_ok "GitHub SSH authentication successful."
         return 0
-
     fi
 
+    #############################################
+    # Failure
+    #############################################
 
-
+    log_error "Cannot access GitHub repository:"
+    log_error "${BOOTSTRAP_REPO}"
     echo
-    echo "================================================="
-    echo " GitHub SSH public key"
-    echo "================================================="
-    cat "${SSH_PUB}"
-    echo "================================================="
-    echo
-    echo "Add this key to:"
-    echo "https://github.com/settings/keys"
+    echo "Verify that the deploy key generated for this repository"
+    echo "was added to the selected GitHub repository and that"
+    echo "'Allow write access' is enabled."
     echo
 
-
-
-
-
-
-    while true; do
-
-        read -rp "Press ENTER after adding the SSH key to GitHub..."
-
-
-        log_info "Testing GitHub SSH authentication"
-
-
-        ssh -T git@github.com > /tmp/github-ssh-test.log 2>&1 || true
-
-
-        SSH_TEST=$(cat /tmp/github-ssh-test.log)
-
-
-        if [[ "${SSH_TEST}" == *"successfully authenticated"* ]]; then
-
-            log_ok "GitHub SSH authentication successful."
-            return 0
-
-        fi
-
-
-        echo
-        log_error "GitHub SSH authentication failed."
-        echo
-        echo "${SSH_TEST}"
-        echo
-        echo "Your SSH public key:"
-        echo
-        cat "${SSH_PUB}"
-        echo
-        echo "Add it here:"
-        echo "https://github.com/settings/keys"
-        echo
-
-    done
-
+    return 1
 }
-
 
 
 #############################################
@@ -119,100 +80,160 @@ ensure_github_ssh_access() {
 
 upload_bootstrap_package() {
 
-    if [[ -z "${BOOTSTRAP_REPO}" ]]; then
+    log_info "Uploading encrypted bootstrap package"
 
+    #############################################
+    # Validate bootstrap repository
+    #############################################
+
+    if [[ -z "${BOOTSTRAP_REPO:-}" ]]; then
         log_error "BOOTSTRAP_REPO is not set."
-        exit 1
-
+        return 1
     fi
 
+    #############################################
+    # Validate bootstrap package
+    #############################################
 
     if [[ ! -d "${ROOT_DIR}/generated/bootstrap" ]]; then
-
-        log_error "Bootstrap package missing."
-        exit 1
-
+        log_error "Bootstrap package missing:"
+        log_error "${ROOT_DIR}/generated/bootstrap"
+        return 1
     fi
 
+    #############################################
+    # Validate deploy key
+    #############################################
 
+    if [[ -z "${SSH_KEY_PATH:-}" ]]; then
+        log_error "SSH_KEY_PATH is not set."
+        return 1
+    fi
 
+    if [[ ! -f "${SSH_KEY_PATH}" ]]; then
+        log_error "Deploy key not found:"
+        log_error "${SSH_KEY_PATH}"
+        return 1
+    fi
 
+    #############################################
+    # SSH command
+    #############################################
 
-    TEMP_DIR="/tmp/bootstrap-upload"
+    local GIT_SSH_COMMAND
 
+    GIT_SSH_COMMAND="ssh \
+-o BatchMode=yes \
+-o StrictHostKeyChecking=accept-new \
+-o IdentitiesOnly=yes \
+-i ${SSH_KEY_PATH}"
+
+    #############################################
+    # Temporary directory
+    #############################################
+
+    local TEMP_DIR="/tmp/bootstrap-upload"
 
     rm -rf "${TEMP_DIR}"
 
+    #############################################
+    # Prepare repository
+    #############################################
 
-    log_info "Preparing bootstrap repository"
+    log_info "Cloning bootstrap repository..."
 
+    if ! GIT_SSH_COMMAND="${GIT_SSH_COMMAND}" \
+        git clone \
+            "${BOOTSTRAP_REPO}" \
+            "${TEMP_DIR}"; then
 
-    git clone \
-        "${BOOTSTRAP_REPO}" \
-        "${TEMP_DIR}"
+        log_error "Failed to clone bootstrap repository:"
+        log_error "${BOOTSTRAP_REPO}"
 
+        rm -rf "${TEMP_DIR}"
 
-    if [[ $? -ne 0 ]]; then
-
-        log_error "Failed to clone bootstrap repository."
-        exit 1
-
+        return 1
     fi
 
+    #############################################
+    # Copy encrypted bootstrap package
+    #############################################
 
-    cp -r \
-        "${ROOT_DIR}/generated/bootstrap/"* \
+    log_info "Copying encrypted bootstrap package..."
+
+    cp -a \
+        "${ROOT_DIR}/generated/bootstrap/." \
         "${TEMP_DIR}/"
 
+    #############################################
+    # Configure repository
+    #############################################
 
-    cd "${TEMP_DIR}" || exit 1
+    git -C "${TEMP_DIR}" config user.name \
+        "${GIT_USER_NAME:-homelab-bootstrap}"
 
+    git -C "${TEMP_DIR}" config user.email \
+        "${GIT_USER_EMAIL:-homelab-bootstrap@localhost}"
 
-    # Configure git identity for this repository
-    git config user.name "${GIT_USER_NAME:-homelab-bootstrap}"
-    git config user.email "${GIT_USER_EMAIL:-homelab-bootstrap@localhost}"
+    #############################################
+    # Add changes
+    #############################################
 
+    git -C "${TEMP_DIR}" add .
 
-    git add .
+    #############################################
+    # Check for changes
+    #############################################
 
+    if git -C "${TEMP_DIR}" diff --cached --quiet; then
 
-    if git diff --cached --quiet; then
+        log_info "No bootstrap package changes to commit."
 
-        log_info "No changes to commit."
+        rm -rf "${TEMP_DIR}"
 
-    else
+        log_ok "Encrypted bootstrap package already up-to-date."
 
-        git commit \
-            -m "Update encrypted cluster bootstrap"
-
-
-        if [[ $? -ne 0 ]]; then
-
-            log_error "Git commit failed."
-            exit 1
-
-        fi
-
-
-        git push
-
-
-        if [[ $? -ne 0 ]]; then
-
-            log_error "Git push failed."
-            exit 1
-
-        fi
-
+        return 0
     fi
 
+    #############################################
+    # Commit
+    #############################################
 
-    cd "${ROOT_DIR}" || exit 1
+    if ! git -C "${TEMP_DIR}" commit \
+        -m "Update encrypted cluster bootstrap"; then
 
+        log_error "Git commit failed."
+
+        rm -rf "${TEMP_DIR}"
+
+        return 1
+    fi
+
+    #############################################
+    # Push
+    #############################################
+
+    log_info "Pushing encrypted bootstrap package..."
+
+    if ! GIT_SSH_COMMAND="${GIT_SSH_COMMAND}" \
+        git -C "${TEMP_DIR}" push \
+            origin \
+            "${GIT_BRANCH:-main}"; then
+
+        log_error "Git push failed."
+        log_error "Verify that the selected deploy key has 'Allow write access'."
+
+        rm -rf "${TEMP_DIR}"
+
+        return 1
+    fi
+
+    #############################################
+    # Cleanup
+    #############################################
 
     rm -rf "${TEMP_DIR}"
 
-
     log_ok "Encrypted bootstrap uploaded."
-
 }

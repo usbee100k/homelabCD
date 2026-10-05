@@ -945,20 +945,20 @@ bootstrap_gitops() {
 
     if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
 
-        # Remove old values.
+        # Remove old repository values.
         sed -i '/^GITHUB_REPO=/d' \
             "${ROOT_DIR}/config/defaults.env"
 
         sed -i '/^BOOTSTRAP_REPO=/d' \
             "${ROOT_DIR}/config/defaults.env"
 
-        # Make sure the file ends with a newline.
+        # Make absolutely sure the file ends with a newline.
         if [[ -s "${ROOT_DIR}/config/defaults.env" ]]; then
 
             LAST_BYTE="$(
                 tail -c 1 "${ROOT_DIR}/config/defaults.env" |
                     od -An -t x1 |
-                    tr -d ' '
+                    tr -d '[:space:]'
             )"
 
             if [[ "${LAST_BYTE}" != "0a" ]]; then
@@ -966,11 +966,12 @@ bootstrap_gitops() {
             fi
         fi
 
-        # Save selected repository.
+        # Save the selected GitHub repository.
         printf 'GITHUB_REPO="%s"\n' \
             "${GITHUB_REPO}" \
             >> "${ROOT_DIR}/config/defaults.env"
 
+        # Bootstrap repository is the same repository selected by the user.
         printf 'BOOTSTRAP_REPO="%s"\n' \
             "${BOOTSTRAP_REPO}" \
             >> "${ROOT_DIR}/config/defaults.env"
