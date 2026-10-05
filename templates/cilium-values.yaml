@@ -18,6 +18,9 @@ autoDirectNodeRoutes: true
 
 ipv4NativeRoutingCIDR: 10.10.0.0/24
 
+endpointRoutes:
+  enabled: true
+
 bpf:
   masquerade: true
   hostLegacyRouting: true

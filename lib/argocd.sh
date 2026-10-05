@@ -13,9 +13,28 @@ install_argocd() {
 
     ARGOCD_DOMAIN="argocd.${BASE_DOMAIN}"
 
+    READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | \
+        awk '$2 == "Ready" && $0 !~ /SchedulingDisabled/ {count++} END {print count+0}')
+
+    if (( READY_NODES >= 2 )); then
+        ARGOCD_REPLICAS=2
+    else
+        ARGOCD_REPLICAS=1
+    fi
+
+    log_info "Detected ${READY_NODES} Ready node(s); using ${ARGOCD_REPLICAS} Argo CD replicas."
+
+    #############################################
+    # Namespace
+    #############################################
+
     kubectl create namespace argocd \
         --dry-run=client \
         -o yaml | kubectl apply -f -
+
+    #############################################
+    # Helm repository
+    #############################################
 
     helm repo add argo https://argoproj.github.io/argo-helm \
         >/dev/null 2>&1 || true
@@ -23,32 +42,51 @@ install_argocd() {
     helm repo update
 
     #############################################
-    # Remove failed Helm release
+    # Handle existing Helm release
     #############################################
 
     if helm status argocd -n argocd >/dev/null 2>&1; then
 
-        STATUS="$(helm status argocd -n argocd -o json | jq -r '.info.status')"
+        STATUS="$(helm status argocd -n argocd -o json \
+            | jq -r '.info.status')"
 
-        if [[ "${STATUS}" == "failed" ]]; then
+        case "${STATUS}" in
 
-            log_warn "Previous Argo CD installation failed. Removing it..."
+            failed|pending-install|pending-upgrade|pending-rollback)
 
-            helm uninstall argocd \
-                -n argocd \
-                --wait || true
+                log_warn "Previous Argo CD release is in '${STATUS}' state."
+                log_warn "Removing stuck Argo CD release..."
 
-            kubectl delete namespace argocd \
-                --ignore-not-found=true \
-                --wait=true
+                helm uninstall argocd \
+                    --namespace argocd \
+                    --wait \
+                    || true
 
-            kubectl create namespace argocd
+                # Remove the namespace so Helm release metadata and
+                # failed hook resources are completely cleaned up.
+                kubectl delete namespace argocd \
+                    --ignore-not-found=true \
+                    --wait=true \
+                    || true
 
-        elif [[ "${STATUS}" == "deployed" ]]; then
+                # Recreate namespace cleanly.
+                kubectl create namespace argocd
 
-            log_info "Argo CD already installed. Applying current configuration..."
+                ;;
 
-        fi
+            deployed)
+
+                log_info "Argo CD already installed. Applying current configuration..."
+
+                ;;
+
+            *)
+
+                log_warn "Argo CD release is in unexpected state '${STATUS}'."
+                ;;
+
+        esac
+
     fi
 
     #############################################
@@ -61,11 +99,19 @@ install_argocd() {
         --values "${ROOT_DIR}/bootstrap/argocd/values.yaml" \
         --set-string "global.domain=${ARGOCD_DOMAIN}" \
         --set-string "configs.cm.url=https://${ARGOCD_DOMAIN}" \
+        --set "server.replicas=${ARGOCD_REPLICAS}" \
+        --set "repoServer.replicas=${ARGOCD_REPLICAS}" \
+        --set "applicationSet.replicas=${ARGOCD_REPLICAS}" \
         --wait \
         --timeout 15m
 
+    #############################################
+    # Apply Ingress
+    #############################################
+
     sed "s/__HOSTNAME__/${ARGOCD_DOMAIN}/g" \
-        "${ROOT_DIR}/bootstrap/argocd/ingress.yaml" | kubectl apply -f -
+        "${ROOT_DIR}/bootstrap/argocd/ingress.yaml" \
+        | kubectl apply -f -
 
     #############################################
     # Wait for CRDs
@@ -89,7 +135,7 @@ install_argocd() {
         --timeout=300s || true
 
     #############################################
-    # Verify resources actually exist
+    # Verify resources
     #############################################
 
     kubectl get deployment argocd-server \
@@ -149,6 +195,8 @@ wait_for_argocd() {
     fi
 
     log_ok "Argo CD Ready."
+
+    install_argocd_replica_scaler
 }
 
 
@@ -767,4 +815,78 @@ bootstrap_gitops() {
         --overwrite
 
     log_ok "GitOps bootstrap complete."
+}
+
+
+install_argocd_replica_scaler() {
+    log_info "Installing Argo CD replica scaler..."
+
+    cat >/usr/local/sbin/argocd-replica-scaler.sh <<'EOF'
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+export KUBECONFIG=/etc/kubernetes/admin.conf
+
+READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | \
+    awk '$2 == "Ready" && $0 !~ /SchedulingDisabled/ {count++} END {print count+0}')
+
+if (( READY_NODES >= 2 )); then
+    DESIRED_REPLICAS=2
+else
+    DESIRED_REPLICAS=1
+fi
+
+for deployment in \
+    argocd-server \
+    argocd-repo-server \
+    argocd-applicationset-controller
+do
+    if kubectl -n argocd get deployment "${deployment}" >/dev/null 2>&1; then
+        CURRENT_REPLICAS=$(kubectl -n argocd \
+            get deployment "${deployment}" \
+            -o jsonpath='{.spec.replicas}')
+
+        if [[ "${CURRENT_REPLICAS}" != "${DESIRED_REPLICAS}" ]]; then
+            logger -t argocd-replica-scaler \
+                "Ready nodes=${READY_NODES}; scaling ${deployment} ${CURRENT_REPLICAS} -> ${DESIRED_REPLICAS}"
+
+            kubectl -n argocd scale deployment "${deployment}" \
+                --replicas="${DESIRED_REPLICAS}"
+        fi
+    fi
+done
+EOF
+
+    chmod +x /usr/local/sbin/argocd-replica-scaler.sh
+
+    cat >/etc/systemd/system/argocd-replica-scaler.service <<'EOF'
+[Unit]
+Description=Argo CD Replica Scaler
+After=network-online.target kubelet.service
+Wants=network-online.target
+Requires=kubelet.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/argocd-replica-scaler.sh
+EOF
+
+    cat >/etc/systemd/system/argocd-replica-scaler.timer <<'EOF'
+[Unit]
+Description=Automatically scale Argo CD replicas based on Ready nodes
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=60s
+Unit=argocd-replica-scaler.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable --now argocd-replica-scaler.timer
+
+    log_ok "Argo CD replica scaler enabled."
 }
