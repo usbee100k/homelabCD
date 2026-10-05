@@ -13,8 +13,10 @@ install_argocd() {
 
     ARGOCD_DOMAIN="argocd.${BASE_DOMAIN}"
 
-    READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | \
-        awk '$2 == "Ready" && $0 !~ /SchedulingDisabled/ {count++} END {print count+0}')
+    READY_NODES=$(
+        kubectl get nodes --no-headers 2>/dev/null |
+            awk '$2 == "Ready" && $0 !~ /SchedulingDisabled/ {count++} END {print count+0}'
+    )
 
     if (( READY_NODES >= 2 )); then
         ARGOCD_REPLICAS=2
@@ -47,8 +49,10 @@ install_argocd() {
 
     if helm status argocd -n argocd >/dev/null 2>&1; then
 
-        STATUS="$(helm status argocd -n argocd -o json \
-            | jq -r '.info.status')"
+        STATUS="$(
+            helm status argocd -n argocd -o json |
+                jq -r '.info.status'
+        )"
 
         case "${STATUS}" in
 
@@ -62,22 +66,17 @@ install_argocd() {
                     --wait \
                     || true
 
-                # Remove the namespace so Helm release metadata and
-                # failed hook resources are completely cleaned up.
                 kubectl delete namespace argocd \
                     --ignore-not-found=true \
                     --wait=true \
                     || true
 
-                # Recreate namespace cleanly.
                 kubectl create namespace argocd
-
                 ;;
 
             deployed)
 
                 log_info "Argo CD already installed. Applying current configuration..."
-
                 ;;
 
             *)
@@ -86,7 +85,6 @@ install_argocd() {
                 ;;
 
         esac
-
     fi
 
     #############################################
@@ -110,8 +108,8 @@ install_argocd() {
     #############################################
 
     sed "s/__HOSTNAME__/${ARGOCD_DOMAIN}/g" \
-        "${ROOT_DIR}/bootstrap/argocd/ingress.yaml" \
-        | kubectl apply -f -
+        "${ROOT_DIR}/bootstrap/argocd/ingress.yaml" |
+        kubectl apply -f -
 
     #############################################
     # Wait for CRDs
@@ -132,7 +130,8 @@ install_argocd() {
     kubectl wait \
         --for=condition=Established \
         crd/applicationsets.argoproj.io \
-        --timeout=300s || true
+        --timeout=300s \
+        || true
 
     #############################################
     # Verify resources
@@ -146,6 +145,7 @@ install_argocd() {
 
     log_ok "Argo CD installed/configured."
 }
+
 
 #############################################
 # WAIT FOR ARGO CD
@@ -166,17 +166,21 @@ wait_for_argocd() {
         --timeout=10m
 
     if kubectl get deployment argocd-dex-server -n argocd >/dev/null 2>&1; then
+
         kubectl rollout status \
             deployment/argocd-dex-server \
             -n argocd \
             --timeout=10m
+
     fi
 
     if kubectl get deployment argocd-redis -n argocd >/dev/null 2>&1; then
+
         kubectl rollout status \
             deployment/argocd-redis \
             -n argocd \
             --timeout=10m
+
     fi
 
     if kubectl get statefulset argocd-application-controller -n argocd >/dev/null 2>&1; then
@@ -192,6 +196,7 @@ wait_for_argocd() {
             deployment/argocd-application-controller \
             -n argocd \
             --timeout=10m
+
     fi
 
     log_ok "Argo CD Ready."
@@ -200,12 +205,17 @@ wait_for_argocd() {
 }
 
 
+#############################################
+# VERIFY CLUSTER DNS
+#############################################
+
 verify_cluster_dns() {
 
     log_info "Verifying cluster DNS..."
 
     kubectl delete pod dns-test \
-        --ignore-not-found=true >/dev/null 2>&1
+        --ignore-not-found=true \
+        >/dev/null 2>&1
 
     kubectl run dns-test \
         --image=busybox:1.36 \
@@ -217,16 +227,19 @@ verify_cluster_dns() {
         --timeout=120s
 
     if ! kubectl exec dns-test -- nslookup kubernetes.default.svc; then
-    log_error "Cluster DNS verification failed."
 
-    kubectl get pods -A -o wide
-    kubectl get svc -A
-    kubectl get endpoints -A
+        log_error "Cluster DNS verification failed."
 
-    exit 1
+        kubectl get pods -A -o wide
+        kubectl get svc -A
+        kubectl get endpoints -A
+
+        exit 1
     fi
 
-    kubectl delete pod dns-test --wait=false >/dev/null
+    kubectl delete pod dns-test \
+        --wait=false \
+        >/dev/null
 
     log_ok "Cluster DNS is working."
 }
@@ -237,260 +250,69 @@ verify_cluster_dns() {
 #############################################
 
 configure_gitops_repository() {
+
     log_info "Configure GitOps repository"
 
-    local GITHUB_USER
-    local GITOPS_REPO
-    local SSH_REPO_URL
-    local CONFIRM
+    # IMPORTANT:
+    # These variables must NOT be local.
+    # They are needed by the functions that run afterward.
 
     while true; do
+
         echo
         read -rp "GitHub username: " GITHUB_USER
+
         while [[ -z "${GITHUB_USER}" ]]; do
             log_warn "GitHub username cannot be empty."
             read -rp "GitHub username: " GITHUB_USER
         done
 
         read -rp "Repository name: " GITOPS_REPO
+
         while [[ -z "${GITOPS_REPO}" ]]; do
             log_warn "Repository name cannot be empty."
             read -rp "Repository name: " GITOPS_REPO
         done
 
-        SSH_REPO_URL="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
+        GITHUB_REPO="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
 
         echo
         echo "GitOps repository:"
         echo
-        echo "  ${SSH_REPO_URL}"
+        echo "  ${GITHUB_REPO}"
         echo
 
         read -rp "Use this repository? [Y/n]: " CONFIRM
         CONFIRM="${CONFIRM:-Y}"
 
         case "${CONFIRM}" in
+
             Y|y)
                 break
                 ;;
+
             N|n)
                 echo
                 continue
                 ;;
+
             *)
                 echo "Please answer Y or N."
                 ;;
-        esac
-    done
 
-    export GITHUB_REPO="${SSH_REPO_URL}"
-    export GITHUB_USER
-    export GITOPS_REPO
-
-    if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
-        sed -i '/^GITHUB_REPO=/d' \
-            "${ROOT_DIR}/config/defaults.env"
-
-        printf 'GITHUB_REPO="%s"\n' "${GITHUB_REPO}" \
-            >> "${ROOT_DIR}/config/defaults.env"
-
-        log_ok "GITHUB_REPO updated to ${GITHUB_REPO}"
-    fi
-}
-
-#############################################
-# SSH KEY
-#############################################
-
-generate_argocd_ssh_key() {
-
-    log_info "Checking Argo CD SSH deploy key"
-
-    [[ -n "${GITHUB_USER:-}" ]] || die "GITHUB_USER missing"
-    [[ -n "${GITOPS_REPO:-}" ]] || die "GITOPS_REPO missing"
-    [[ -n "${GITHUB_REPO:-}" ]] || die "GITHUB_REPO missing"
-
-    local KEY_ID
-    KEY_ID="${GITHUB_USER}-${GITOPS_REPO}"
-    KEY_ID="${KEY_ID//[^[:alnum:]_.-]/_}"
-
-    SSH_KEY_PATH="${SSH_KEY_PATH:-/etc/kubernetes/argocd/${KEY_ID}_id_ed25519}"
-    export SSH_KEY_PATH
-
-    mkdir -p "$(dirname "${SSH_KEY_PATH}")"
-}
-
-#############################################
-# VERIFY GITHUB REPOSITORY ACCESS
-#############################################
-
-verify_argocd_github_access() {
-
-    log_info "Verifying GitHub deploy key access to ${GITHUB_REPO}..."
-
-    while true; do
-
-        if OUTPUT="$(
-            GIT_SSH_COMMAND="ssh \
-                -o BatchMode=yes \
-                -o StrictHostKeyChecking=accept-new \
-                -o IdentitiesOnly=yes \
-                -i ${SSH_KEY_PATH}" \
-            git ls-remote "${GITHUB_REPO}" HEAD 2>&1
-        )"; then
-
-            log_ok "GitHub repository access verified."
-            return 0
-        fi
-
-        echo
-        echo "================================================="
-        echo " GitHub repository access failed"
-        echo "================================================="
-        echo
-        echo "Repository:"
-        echo "  ${GITHUB_REPO}"
-        echo
-        echo "Make sure you have:"
-        echo "  1. Added this public key as a Deploy Key"
-        echo "  2. Added it to the selected repository"
-        echo "  3. Enabled 'Allow write access'"
-        echo "  4. Saved the Deploy Key"
-        echo
-        echo "Current response:"
-        echo
-        echo "${OUTPUT}"
-        echo
-
-        read -rp "Press ENTER to retry..."
-    done
-}
-
-#############################################
-# ARGO CD REPOSITORY
-#############################################
-
-configure_argocd_repository() {
-
-    log_info "Configuring Argo CD repository..."
-
-    [[ -n "${GITHUB_REPO:-}" ]] || \
-        die "GITHUB_REPO missing"
-
-    local REPO_URL="${GITHUB_REPO}"
-
-    #############################################
-    # Normalize to SSH URL
-    #############################################
-
-    if [[ "${REPO_URL}" == https://github.com/* ]]; then
-        REPO_URL="${REPO_URL/https:\/\/github.com\//git@github.com:}"
-    fi
-
-    REPO_URL="${REPO_URL%.git}.git"
-
-    #############################################
-    # Remove old repository secret
-    #############################################
-
-    kubectl delete secret bootstrap-repository \
-        -n argocd \
-        --ignore-not-found
-
-    #############################################
-    # Create repository secret
-    #############################################
-
-    kubectl create secret generic bootstrap-repository \
-        -n argocd \
-        --from-literal=type=git \
-        --from-literal=url="${REPO_URL}" \
-        --from-file=sshPrivateKey="${SSH_KEY_PATH}"
-
-    #############################################
-    # Label as Argo CD repository
-    #############################################
-
-    kubectl label secret bootstrap-repository \
-        -n argocd \
-        argocd.argoproj.io/secret-type=repository \
-        --overwrite
-
-    #############################################
-    # Restart repo server so it reloads the key
-    #############################################
-
-    kubectl rollout restart deployment argocd-repo-server \
-        -n argocd
-
-    kubectl rollout status deployment argocd-repo-server \
-        -n argocd \
-        --timeout=120s
-
-    log_ok "Argo CD repository configured."
-
-}
-
-
-#############################################
-# CONFIGURE GITOPS REPOSITORY
-#############################################
-
-configure_gitops_repository() {
-
-    log_info "Configure GitOps repository"
-
-    local GITHUB_USER
-    local GITOPS_REPO
-    local SSH_REPO_URL
-    local CONFIRM
-
-    while true; do
-
-        echo
-        read -rp "GitHub username: " GITHUB_USER
-
-        while [[ -z "${GITHUB_USER}" ]]; do
-            log_warn "GitHub username cannot be empty."
-            read -rp "GitHub username: " GITHUB_USER
-        done
-
-        read -rp "Repository name: " GITOPS_REPO
-
-        while [[ -z "${GITOPS_REPO}" ]]; do
-            log_warn "Repository name cannot be empty."
-            read -rp "Repository name: " GITOPS_REPO
-        done
-
-        SSH_REPO_URL="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
-
-        echo
-        echo "GitOps repository:"
-        echo
-        echo "  ${SSH_REPO_URL}"
-        echo
-
-        read -rp "Use this repository? [Y/n]: " CONFIRM
-        CONFIRM="${CONFIRM:-Y}"
-
-        case "${CONFIRM}" in
-            Y|y)
-                break
-                ;;
-            N|n)
-                continue
-                ;;
-            *)
-                echo "Please answer Y or N."
-                ;;
         esac
     done
 
     export GITHUB_USER
     export GITOPS_REPO
-    export GITHUB_REPO="${SSH_REPO_URL}"
+    export GITHUB_REPO
+
+    #############################################
+    # Save selected repository
+    #############################################
 
     if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
+
         sed -i '/^GITHUB_REPO=/d' \
             "${ROOT_DIR}/config/defaults.env"
 
@@ -520,7 +342,7 @@ generate_argocd_ssh_key() {
         die "GITHUB_REPO missing"
 
     #############################################
-    # Create repo-specific key path
+    # Repo-specific key
     #############################################
 
     local KEY_ID
@@ -562,7 +384,10 @@ generate_argocd_ssh_key() {
     #############################################
 
     if [[ ! -f "${SSH_KEY_PATH}.pub" ]]; then
-        log_error "Missing public key: ${SSH_KEY_PATH}.pub"
+
+        log_error "Missing public key:"
+        log_error "${SSH_KEY_PATH}.pub"
+
         return 1
     fi
 
@@ -572,7 +397,7 @@ generate_argocd_ssh_key() {
 
     echo
     echo "=========================================================="
-    echo "            ADD THIS DEPLOY KEY TO GITHUB"
+    echo "             ADD THIS DEPLOY KEY TO GITHUB"
     echo "=========================================================="
     echo
     echo "Repository:"
@@ -603,6 +428,9 @@ verify_argocd_github_access() {
 
     log_info "Verifying GitHub access to ${GITHUB_REPO}..."
 
+    [[ -n "${GITHUB_REPO:-}" ]] || \
+        die "GITHUB_REPO missing"
+
     [[ -n "${SSH_KEY_PATH:-}" ]] || \
         die "SSH_KEY_PATH missing"
 
@@ -620,8 +448,8 @@ verify_argocd_github_access() {
         )"; then
 
             log_ok "GitHub repository access verified."
-            return 0
 
+            return 0
         fi
 
         echo
@@ -633,7 +461,7 @@ verify_argocd_github_access() {
         echo "  ${GITHUB_REPO}"
         echo
         echo "Make sure you have:"
-        echo "  1. Added the public key as a Deploy Key"
+        echo "  1. Added this public key as a Deploy Key"
         echo "  2. Added it to THIS repository"
         echo "  3. Enabled 'Allow write access'"
         echo "  4. Saved the Deploy Key"
@@ -645,6 +473,77 @@ verify_argocd_github_access() {
 
         read -rp "Press ENTER to retry..."
     done
+}
+
+
+#############################################
+# ARGO CD REPOSITORY
+#############################################
+
+configure_argocd_repository() {
+
+    log_info "Configuring Argo CD repository..."
+
+    [[ -n "${GITHUB_REPO:-}" ]] || \
+        die "GITHUB_REPO missing"
+
+    [[ -n "${SSH_KEY_PATH:-}" ]] || \
+        die "SSH_KEY_PATH missing"
+
+    local REPO_URL="${GITHUB_REPO}"
+
+    #############################################
+    # Normalize to SSH URL
+    #############################################
+
+    if [[ "${REPO_URL}" == https://github.com/* ]]; then
+
+        REPO_URL="${REPO_URL#https://github.com/}"
+        REPO_URL="git@github.com:${REPO_URL}"
+
+    fi
+
+    REPO_URL="${REPO_URL%.git}.git"
+
+    #############################################
+    # Remove old repository secret
+    #############################################
+
+    kubectl delete secret bootstrap-repository \
+        -n argocd \
+        --ignore-not-found
+
+    #############################################
+    # Create repository secret
+    #############################################
+
+    kubectl create secret generic bootstrap-repository \
+        -n argocd \
+        --from-literal=type=git \
+        --from-literal=url="${REPO_URL}" \
+        --from-file=sshPrivateKey="${SSH_KEY_PATH}"
+
+    #############################################
+    # Label as Argo CD repository
+    #############################################
+
+    kubectl label secret bootstrap-repository \
+        -n argocd \
+        argocd.argoproj.io/secret-type=repository \
+        --overwrite
+
+    #############################################
+    # Restart repo server
+    #############################################
+
+    kubectl rollout restart deployment argocd-repo-server \
+        -n argocd
+
+    kubectl rollout status deployment argocd-repo-server \
+        -n argocd \
+        --timeout=120s
+
+    log_ok "Argo CD repository configured."
 }
 
 
@@ -661,10 +560,11 @@ sync_gitops_repo() {
     #############################################
 
     local SRC_DIR
+
     SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
     #############################################
-    # GitHub repository
+    # Validate variables
     #############################################
 
     [[ -n "${GITHUB_REPO:-}" ]] || \
@@ -673,15 +573,21 @@ sync_gitops_repo() {
     [[ -n "${SSH_KEY_PATH:-}" ]] || \
         die "SSH_KEY_PATH missing"
 
+    #############################################
+    # Repository URL
+    #############################################
+
     local SSH_REPO_URL="${GITHUB_REPO}"
 
     #############################################
-    # Normalize repository URL
+    # Normalize URL
     #############################################
 
     if [[ "${SSH_REPO_URL}" == https://github.com/* ]]; then
+
         SSH_REPO_URL="${SSH_REPO_URL#https://github.com/}"
         SSH_REPO_URL="git@github.com:${SSH_REPO_URL}"
+
     fi
 
     SSH_REPO_URL="${SSH_REPO_URL%.git}.git"
@@ -693,6 +599,7 @@ sync_gitops_repo() {
     #############################################
 
     local GITOPS_REPO
+
     GITOPS_REPO="${SSH_REPO_URL##*/}"
     GITOPS_REPO="${GITOPS_REPO%.git}"
 
@@ -718,7 +625,9 @@ sync_gitops_repo() {
     #############################################
 
     if [[ "${SRC_DIR}" == "${GITOPS_DIR}" ]]; then
+
         log_error "Source repo and GitOps repo are the same directory."
+
         return 1
     fi
 
@@ -759,8 +668,10 @@ sync_gitops_repo() {
     if [[ ! -d "${GITOPS_DIR}/.git" ]]; then
 
         if [[ -e "${GITOPS_DIR}" ]]; then
+
             log_error "GitOps directory already exists but is not a Git repository:"
             log_error "  ${GITOPS_DIR}"
+
             return 1
         fi
 
@@ -786,7 +697,7 @@ sync_gitops_repo() {
         remote set-url origin "${SSH_REPO_URL}"
 
     #############################################
-    # Fetch repository
+    # Fetch
     #############################################
 
     log_info "Fetching GitOps repository..."
@@ -795,6 +706,7 @@ sync_gitops_repo() {
         git -C "${GITOPS_DIR}" fetch origin; then
 
         log_error "Failed to fetch GitOps repository."
+
         return 1
     fi
 
@@ -803,6 +715,7 @@ sync_gitops_repo() {
     #############################################
 
     local GITOPS_BRANCH
+
     GITOPS_BRANCH="${GIT_BRANCH:-main}"
 
     #############################################
@@ -869,7 +782,7 @@ sync_gitops_repo() {
     log_ok "GitOps manifests updated."
 
     #############################################
-    # Configure Git identity
+    # Git identity
     #############################################
 
     git -C "${GITOPS_DIR}" config user.name \
@@ -885,7 +798,9 @@ sync_gitops_repo() {
     git -C "${GITOPS_DIR}" add .
 
     if git -C "${GITOPS_DIR}" diff --cached --quiet; then
+
         log_ok "GitOps repository already up-to-date."
+
         return 0
     fi
 
@@ -921,13 +836,13 @@ bootstrap_gitops() {
     log_info "Bootstrapping GitOps"
 
     #############################################
-    # Select GitHub repository FIRST
+    # ASK FOR REPOSITORY FIRST
     #############################################
 
     configure_gitops_repository
 
     #############################################
-    # Generate Argo CD deploy key
+    # Generate deploy key
     #############################################
 
     generate_argocd_ssh_key
@@ -939,13 +854,13 @@ bootstrap_gitops() {
     verify_argocd_github_access
 
     #############################################
-    # Sync manifests to selected repository
+    # Sync manifests
     #############################################
 
     sync_gitops_repo
 
     #############################################
-    # Configure Argo CD repository secret
+    # Configure Argo CD repository
     #############################################
 
     configure_argocd_repository
