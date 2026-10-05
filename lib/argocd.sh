@@ -232,7 +232,71 @@ verify_cluster_dns() {
 }
 
 
+#############################################
+# GITOPS REPOSITORY SELECTION
+#############################################
 
+configure_gitops_repository() {
+    log_info "Configure GitOps repository"
+
+    local GITHUB_USER
+    local GITOPS_REPO
+    local SSH_REPO_URL
+    local CONFIRM
+
+    while true; do
+        echo
+        read -rp "GitHub username: " GITHUB_USER
+        while [[ -z "${GITHUB_USER}" ]]; do
+            log_warn "GitHub username cannot be empty."
+            read -rp "GitHub username: " GITHUB_USER
+        done
+
+        read -rp "Repository name: " GITOPS_REPO
+        while [[ -z "${GITOPS_REPO}" ]]; do
+            log_warn "Repository name cannot be empty."
+            read -rp "Repository name: " GITOPS_REPO
+        done
+
+        SSH_REPO_URL="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
+
+        echo
+        echo "GitOps repository:"
+        echo
+        echo "  ${SSH_REPO_URL}"
+        echo
+
+        read -rp "Use this repository? [Y/n]: " CONFIRM
+        CONFIRM="${CONFIRM:-Y}"
+
+        case "${CONFIRM}" in
+            Y|y)
+                break
+                ;;
+            N|n)
+                echo
+                continue
+                ;;
+            *)
+                echo "Please answer Y or N."
+                ;;
+        esac
+    done
+
+    export GITHUB_REPO="${SSH_REPO_URL}"
+    export GITHUB_USER
+    export GITOPS_REPO
+
+    if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
+        sed -i '/^GITHUB_REPO=/d' \
+            "${ROOT_DIR}/config/defaults.env"
+
+        printf 'GITHUB_REPO="%s"\n' "${GITHUB_REPO}" \
+            >> "${ROOT_DIR}/config/defaults.env"
+
+        log_ok "GITHUB_REPO updated to ${GITHUB_REPO}"
+    fi
+}
 
 #############################################
 # SSH KEY
@@ -242,164 +306,65 @@ generate_argocd_ssh_key() {
 
     log_info "Checking Argo CD SSH deploy key"
 
-    SSH_KEY_PATH="${SSH_KEY_PATH:-/etc/kubernetes/argocd/id_ed25519}"
+    [[ -n "${GITHUB_USER:-}" ]] || die "GITHUB_USER missing"
+    [[ -n "${GITOPS_REPO:-}" ]] || die "GITOPS_REPO missing"
+    [[ -n "${GITHUB_REPO:-}" ]] || die "GITHUB_REPO missing"
 
+    local KEY_ID
+    KEY_ID="${GITHUB_USER}-${GITOPS_REPO}"
+    KEY_ID="${KEY_ID//[^[:alnum:]_.-]/_}"
+
+    SSH_KEY_PATH="${SSH_KEY_PATH:-/etc/kubernetes/argocd/${KEY_ID}_id_ed25519}"
     export SSH_KEY_PATH
 
     mkdir -p "$(dirname "${SSH_KEY_PATH}")"
-
-
-
-    #############################################
-    # Generate Key
-    #############################################
-
-    if [[ ! -f "${SSH_KEY_PATH}" ]]; then
-
-        ssh-keygen \
-            -t ed25519 \
-            -N "" \
-            -f "${SSH_KEY_PATH}" \
-            -C "argocd@${CLUSTER_NAME}"
-
-        chmod 600 "${SSH_KEY_PATH}"
-
-        log_ok "Argo CD SSH key generated."
-
-    else
-
-        log_ok "Argo CD SSH key already exists."
-
-    fi
-
-
-
-    #############################################
-    # Verify Public Key
-    #############################################
-
-    if [[ ! -f "${SSH_KEY_PATH}.pub" ]]; then
-
-        log_error "Missing public key: ${SSH_KEY_PATH}.pub"
-
-        return 1
-
-    fi
-
-
-
-    #############################################
-    # Display Deploy Key
-    #############################################
-
-    echo
-    echo "=========================================================="
-    echo "            ADD THIS DEPLOY KEY TO GITHUB"
-    echo "=========================================================="
-    echo
-    echo "Repository:"
-    echo "  ${GITHUB_REPO}"
-    echo
-    echo "GitHub:"
-    echo "  Settings"
-    echo "    -> Deploy keys"
-    echo "       -> Add deploy key"
-    echo
-    echo "Enable:"
-    echo "  ✓ Allow read access"
-    echo
-    cat "${SSH_KEY_PATH}.pub"
-    echo
-    echo "=========================================================="
-    echo
-
-    read -rp "Press ENTER after adding the deploy key to GitHub..."
-
-
-
-    #############################################
-    # Wait Until GitHub Accepts It
-    #############################################
-
-    log_info "Waiting for GitHub to accept deploy key..."
-
-    while true; do
-
-        OUTPUT="$(
-            ssh \
-                -o BatchMode=yes \
-                -o StrictHostKeyChecking=accept-new \
-                -i "${SSH_KEY_PATH}" \
-                -T git@github.com 2>&1 || true
-        )"
-
-        if echo "${OUTPUT}" | grep -q "successfully authenticated"; then
-
-            log_ok "GitHub deploy key verified."
-
-            break
-
-        fi
-
-        echo
-        echo "GitHub is not accepting the deploy key yet."
-        echo
-        echo "If you haven't added it yet, do that now."
-        echo
-        read -rp "Press ENTER to retry..."
-
-    done
-
 }
 
 #############################################
-# VERIFY GITHUB ACCESS
+# VERIFY GITHUB REPOSITORY ACCESS
 #############################################
 
 verify_argocd_github_access() {
 
-    log_info "Verifying GitHub deploy key..."
+    log_info "Verifying GitHub deploy key access to ${GITHUB_REPO}..."
 
     while true; do
 
-        OUTPUT="$(
-            ssh \
+        if OUTPUT="$(
+            GIT_SSH_COMMAND="ssh \
                 -o BatchMode=yes \
                 -o StrictHostKeyChecking=accept-new \
-                -i "${SSH_KEY_PATH}" \
-                -T git@github.com 2>&1 || true
-        )"
+                -o IdentitiesOnly=yes \
+                -i ${SSH_KEY_PATH}" \
+            git ls-remote "${GITHUB_REPO}" HEAD 2>&1
+        )"; then
 
-        if echo "${OUTPUT}" | grep -q "successfully authenticated"; then
-
-            log_ok "GitHub deploy key verified."
-            break
-
+            log_ok "GitHub repository access verified."
+            return 0
         fi
 
         echo
         echo "================================================="
-        echo " GitHub cannot authenticate this deploy key"
+        echo " GitHub repository access failed"
         echo "================================================="
         echo
+        echo "Repository:"
+        echo "  ${GITHUB_REPO}"
+        echo
         echo "Make sure you have:"
-        echo "  1. Added the public key as a Deploy Key"
-        echo "  2. Enabled 'Allow write access'"
-        echo "  3. Saved the Deploy Key"
+        echo "  1. Added this public key as a Deploy Key"
+        echo "  2. Added it to the selected repository"
+        echo "  3. Enabled 'Allow write access'"
+        echo "  4. Saved the Deploy Key"
         echo
         echo "Current response:"
         echo
         echo "${OUTPUT}"
         echo
+
         read -rp "Press ENTER to retry..."
-
     done
-
 }
-
-
-
-
 
 #############################################
 # ARGO CD REPOSITORY
@@ -466,6 +431,223 @@ configure_argocd_repository() {
 
 }
 
+
+#############################################
+# CONFIGURE GITOPS REPOSITORY
+#############################################
+
+configure_gitops_repository() {
+
+    log_info "Configure GitOps repository"
+
+    local GITHUB_USER
+    local GITOPS_REPO
+    local SSH_REPO_URL
+    local CONFIRM
+
+    while true; do
+
+        echo
+        read -rp "GitHub username: " GITHUB_USER
+
+        while [[ -z "${GITHUB_USER}" ]]; do
+            log_warn "GitHub username cannot be empty."
+            read -rp "GitHub username: " GITHUB_USER
+        done
+
+        read -rp "Repository name: " GITOPS_REPO
+
+        while [[ -z "${GITOPS_REPO}" ]]; do
+            log_warn "Repository name cannot be empty."
+            read -rp "Repository name: " GITOPS_REPO
+        done
+
+        SSH_REPO_URL="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
+
+        echo
+        echo "GitOps repository:"
+        echo
+        echo "  ${SSH_REPO_URL}"
+        echo
+
+        read -rp "Use this repository? [Y/n]: " CONFIRM
+        CONFIRM="${CONFIRM:-Y}"
+
+        case "${CONFIRM}" in
+            Y|y)
+                break
+                ;;
+            N|n)
+                continue
+                ;;
+            *)
+                echo "Please answer Y or N."
+                ;;
+        esac
+    done
+
+    export GITHUB_USER
+    export GITOPS_REPO
+    export GITHUB_REPO="${SSH_REPO_URL}"
+
+    if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
+        sed -i '/^GITHUB_REPO=/d' \
+            "${ROOT_DIR}/config/defaults.env"
+
+        printf 'GITHUB_REPO="%s"\n' "${GITHUB_REPO}" \
+            >> "${ROOT_DIR}/config/defaults.env"
+
+        log_ok "GITHUB_REPO updated to ${GITHUB_REPO}"
+    fi
+}
+
+
+#############################################
+# SSH KEY
+#############################################
+
+generate_argocd_ssh_key() {
+
+    log_info "Checking Argo CD SSH deploy key"
+
+    [[ -n "${GITHUB_USER:-}" ]] || \
+        die "GITHUB_USER missing"
+
+    [[ -n "${GITOPS_REPO:-}" ]] || \
+        die "GITOPS_REPO missing"
+
+    [[ -n "${GITHUB_REPO:-}" ]] || \
+        die "GITHUB_REPO missing"
+
+    #############################################
+    # Create repo-specific key path
+    #############################################
+
+    local KEY_ID
+
+    KEY_ID="${GITHUB_USER}-${GITOPS_REPO}"
+    KEY_ID="${KEY_ID//[^[:alnum:]_.-]/_}"
+
+    SSH_KEY_PATH="/etc/kubernetes/argocd/${KEY_ID}_id_ed25519"
+    export SSH_KEY_PATH
+
+    mkdir -p "$(dirname "${SSH_KEY_PATH}")"
+
+    #############################################
+    # Generate key
+    #############################################
+
+    if [[ ! -f "${SSH_KEY_PATH}" ]]; then
+
+        ssh-keygen \
+            -t ed25519 \
+            -N "" \
+            -f "${SSH_KEY_PATH}" \
+            -C "argocd@${GITHUB_USER}/${GITOPS_REPO}"
+
+        chmod 600 "${SSH_KEY_PATH}"
+
+        log_ok "Argo CD SSH key generated."
+
+    else
+
+        chmod 600 "${SSH_KEY_PATH}"
+
+        log_ok "Argo CD SSH key already exists."
+
+    fi
+
+    #############################################
+    # Verify public key
+    #############################################
+
+    if [[ ! -f "${SSH_KEY_PATH}.pub" ]]; then
+        log_error "Missing public key: ${SSH_KEY_PATH}.pub"
+        return 1
+    fi
+
+    #############################################
+    # Display deploy key
+    #############################################
+
+    echo
+    echo "=========================================================="
+    echo "            ADD THIS DEPLOY KEY TO GITHUB"
+    echo "=========================================================="
+    echo
+    echo "Repository:"
+    echo "  ${GITHUB_REPO}"
+    echo
+    echo "Add deploy key here:"
+    echo "  https://github.com/${GITHUB_USER}/${GITOPS_REPO}/settings/keys"
+    echo
+    echo "Enable:"
+    echo "  ✓ Allow write access"
+    echo
+    echo "Public key:"
+    echo
+    cat "${SSH_KEY_PATH}.pub"
+    echo
+    echo "=========================================================="
+    echo
+
+    read -rp "Press ENTER after adding the deploy key to GitHub..."
+}
+
+
+#############################################
+# VERIFY GITHUB REPOSITORY ACCESS
+#############################################
+
+verify_argocd_github_access() {
+
+    log_info "Verifying GitHub access to ${GITHUB_REPO}..."
+
+    [[ -n "${SSH_KEY_PATH:-}" ]] || \
+        die "SSH_KEY_PATH missing"
+
+    while true; do
+
+        local OUTPUT
+
+        if OUTPUT="$(
+            GIT_SSH_COMMAND="ssh \
+-o BatchMode=yes \
+-o StrictHostKeyChecking=accept-new \
+-o IdentitiesOnly=yes \
+-i ${SSH_KEY_PATH}" \
+            git ls-remote "${GITHUB_REPO}" HEAD 2>&1
+        )"; then
+
+            log_ok "GitHub repository access verified."
+            return 0
+
+        fi
+
+        echo
+        echo "================================================="
+        echo " GitHub repository access failed"
+        echo "================================================="
+        echo
+        echo "Repository:"
+        echo "  ${GITHUB_REPO}"
+        echo
+        echo "Make sure you have:"
+        echo "  1. Added the public key as a Deploy Key"
+        echo "  2. Added it to THIS repository"
+        echo "  3. Enabled 'Allow write access'"
+        echo "  4. Saved the Deploy Key"
+        echo
+        echo "Current response:"
+        echo
+        echo "${OUTPUT}"
+        echo
+
+        read -rp "Press ENTER to retry..."
+    done
+}
+
+
 #############################################
 # SYNC GITOPS REPOSITORY
 #############################################
@@ -488,114 +670,31 @@ sync_gitops_repo() {
     [[ -n "${GITHUB_REPO:-}" ]] || \
         die "GITHUB_REPO missing"
 
-    local REPO_URL
-    local GITHUB_USER
-    local GITOPS_REPO
-    local SSH_REPO_URL
-    local CONFIRM
+    [[ -n "${SSH_KEY_PATH:-}" ]] || \
+        die "SSH_KEY_PATH missing"
 
-    while true; do
-
-        REPO_URL="${GITHUB_REPO}"
-
-        #############################################
-        # Normalize URL
-        #############################################
-
-        if [[ "${REPO_URL}" == git@github.com:* ]]; then
-            REPO_URL="${REPO_URL#git@github.com:}"
-        fi
-
-        if [[ "${REPO_URL}" == https://github.com/* ]]; then
-            REPO_URL="${REPO_URL#https://github.com/}"
-        fi
-
-        REPO_URL="${REPO_URL%.git}"
-
-        GITHUB_USER="${REPO_URL%%/*}"
-        GITOPS_REPO="${REPO_URL##*/}"
-
-        SSH_REPO_URL="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
-
-        log_info "GitOps repository detected:"
-        echo
-        echo "  ${SSH_REPO_URL}"
-        echo
-
-        read -rp "Is this correct? [Y/n]: " CONFIRM
-        CONFIRM="${CONFIRM:-Y}"
-
-        case "${CONFIRM}" in
-
-            Y|y)
-                break
-                ;;
-
-            N|n)
-
-                echo
-
-                read -rp "GitHub username: " GITHUB_USER
-                read -rp "Repository name: " GITOPS_REPO
-
-                SSH_REPO_URL="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
-
-                echo
-                echo "Using:"
-                echo "  ${SSH_REPO_URL}"
-                echo
-
-                read -rp "Use this repository? [Y/n]: " CONFIRM
-
-                if [[ "${CONFIRM:-Y}" =~ ^[Yy]$ ]]; then
-
-                    GITHUB_REPO="${SSH_REPO_URL}"
-                    export GITHUB_REPO
-
-                    if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
-
-                        sed -i '/^GITHUB_REPO=/d' \
-                            "${ROOT_DIR}/config/defaults.env"
-
-                        echo "GITHUB_REPO=\"${SSH_REPO_URL}\"" \
-                            >> "${ROOT_DIR}/config/defaults.env"
-
-                        log_ok "defaults.env updated."
-
-                    fi
-
-                    break
-                fi
-
-                ;;
-
-            *)
-                echo "Please answer Y or N."
-                ;;
-
-        esac
-
-    done
+    local SSH_REPO_URL="${GITHUB_REPO}"
 
     #############################################
-    # Save GitOps Repository
+    # Normalize repository URL
     #############################################
 
-    if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
-
-        log_info "Updating config/defaults.env"
-
-        sed -i '/^GITHUB_REPO=/d' \
-            "${ROOT_DIR}/config/defaults.env"
-
-        echo "GITHUB_REPO=\"${SSH_REPO_URL}\"" \
-            >> "${ROOT_DIR}/config/defaults.env"
-
-        export GITHUB_REPO="${SSH_REPO_URL}"
-
-        log_ok "GITHUB_REPO updated to ${SSH_REPO_URL}"
-
+    if [[ "${SSH_REPO_URL}" == https://github.com/* ]]; then
+        SSH_REPO_URL="${SSH_REPO_URL#https://github.com/}"
+        SSH_REPO_URL="git@github.com:${SSH_REPO_URL}"
     fi
+
+    SSH_REPO_URL="${SSH_REPO_URL%.git}.git"
+
+    export GITHUB_REPO="${SSH_REPO_URL}"
+
+    #############################################
+    # Extract repository name
+    #############################################
+
+    local GITOPS_REPO
+    GITOPS_REPO="${SSH_REPO_URL##*/}"
+    GITOPS_REPO="${GITOPS_REPO%.git}"
 
     #############################################
     # Real user
@@ -619,12 +718,39 @@ sync_gitops_repo() {
     #############################################
 
     if [[ "${SRC_DIR}" == "${GITOPS_DIR}" ]]; then
-
         log_error "Source repo and GitOps repo are the same directory."
+        return 1
+    fi
+
+    #############################################
+    # SSH command
+    #############################################
+
+    local GIT_SSH_COMMAND
+
+    GIT_SSH_COMMAND="ssh \
+-o BatchMode=yes \
+-o StrictHostKeyChecking=accept-new \
+-o IdentitiesOnly=yes \
+-i ${SSH_KEY_PATH}"
+
+    #############################################
+    # Verify repository access
+    #############################################
+
+    log_info "Verifying access to ${SSH_REPO_URL}..."
+
+    if ! GIT_SSH_COMMAND="${GIT_SSH_COMMAND}" \
+        git ls-remote "${SSH_REPO_URL}" HEAD >/dev/null 2>&1; then
+
+        log_error "Cannot access GitHub repository:"
+        log_error "  ${SSH_REPO_URL}"
+        log_error "Verify that the deploy key was added to this repository."
 
         return 1
-
     fi
+
+    log_ok "GitHub repository access verified."
 
     #############################################
     # Clone repository
@@ -632,17 +758,24 @@ sync_gitops_repo() {
 
     if [[ ! -d "${GITOPS_DIR}/.git" ]]; then
 
+        if [[ -e "${GITOPS_DIR}" ]]; then
+            log_error "GitOps directory already exists but is not a Git repository:"
+            log_error "  ${GITOPS_DIR}"
+            return 1
+        fi
+
         log_info "Cloning GitOps repository..."
 
-        git clone \
-            "${SSH_REPO_URL}" \
-            "${GITOPS_DIR}" || {
+        if ! GIT_SSH_COMMAND="${GIT_SSH_COMMAND}" \
+            git clone \
+                "${SSH_REPO_URL}" \
+                "${GITOPS_DIR}"; then
 
-            log_error "Failed to clone GitOps repository."
+            log_error "Failed to clone GitOps repository:"
+            log_error "  ${SSH_REPO_URL}"
 
             return 1
-        }
-
+        fi
     fi
 
     #############################################
@@ -652,10 +785,48 @@ sync_gitops_repo() {
     git -C "${GITOPS_DIR}" \
         remote set-url origin "${SSH_REPO_URL}"
 
-    git -C "${GITOPS_DIR}" fetch origin
+    #############################################
+    # Fetch repository
+    #############################################
 
-    git -C "${GITOPS_DIR}" reset --hard \
-        "origin/${GIT_BRANCH:-main}"
+    log_info "Fetching GitOps repository..."
+
+    if ! GIT_SSH_COMMAND="${GIT_SSH_COMMAND}" \
+        git -C "${GITOPS_DIR}" fetch origin; then
+
+        log_error "Failed to fetch GitOps repository."
+        return 1
+    fi
+
+    #############################################
+    # Git branch
+    #############################################
+
+    local GITOPS_BRANCH
+    GITOPS_BRANCH="${GIT_BRANCH:-main}"
+
+    #############################################
+    # Ensure local branch exists
+    #############################################
+
+    git -C "${GITOPS_DIR}" checkout -B "${GITOPS_BRANCH}"
+
+    #############################################
+    # Reset to remote branch if it exists
+    #############################################
+
+    if git -C "${GITOPS_DIR}" \
+        show-ref --verify --quiet \
+        "refs/remotes/origin/${GITOPS_BRANCH}"; then
+
+        git -C "${GITOPS_DIR}" reset --hard \
+            "origin/${GITOPS_BRANCH}"
+
+    else
+
+        log_warn "Remote branch origin/${GITOPS_BRANCH} does not exist yet."
+
+    fi
 
     #############################################
     # Copy manifests
@@ -686,7 +857,7 @@ sync_gitops_repo() {
         \( -name "*.yaml" -o -name "*.yml" \) \
         -exec sed -i \
             -e "s|REPLACE_REPO_URL|${SSH_REPO_URL}|g" \
-            -e "s|REPLACE_BRANCH|${GIT_BRANCH:-main}|g" \
+            -e "s|REPLACE_BRANCH|${GITOPS_BRANCH}|g" \
             {} +
 
     #############################################
@@ -714,11 +885,8 @@ sync_gitops_repo() {
     git -C "${GITOPS_DIR}" add .
 
     if git -C "${GITOPS_DIR}" diff --cached --quiet; then
-
         log_ok "GitOps repository already up-to-date."
-
         return 0
-
     fi
 
     git -C "${GITOPS_DIR}" commit \
@@ -728,8 +896,17 @@ sync_gitops_repo() {
     # Push
     #############################################
 
-    git -C "${GITOPS_DIR}" push \
-        origin "${GIT_BRANCH:-main}"
+    log_info "Pushing GitOps changes..."
+
+    if ! GIT_SSH_COMMAND="${GIT_SSH_COMMAND}" \
+        git -C "${GITOPS_DIR}" push \
+            -u origin "${GITOPS_BRANCH}"; then
+
+        log_error "Failed to push GitOps repository."
+        log_error "Make sure the deploy key has 'Allow write access' enabled."
+
+        return 1
+    fi
 
     log_ok "GitOps repository updated."
 }
@@ -743,29 +920,38 @@ bootstrap_gitops() {
 
     log_info "Bootstrapping GitOps"
 
-    [[ -n "${GITHUB_REPO:-}" ]] || \
-        die "GITHUB_REPO missing"
+    #############################################
+    # Select GitHub repository FIRST
+    #############################################
+
+    configure_gitops_repository
 
     #############################################
-    # Generate Argo CD Deploy Key
+    # Generate Argo CD deploy key
     #############################################
 
     generate_argocd_ssh_key
 
     #############################################
-    # Wait Until User Adds Deploy Key
+    # Verify selected repository
     #############################################
 
     verify_argocd_github_access
 
     #############################################
-    # Configure Repository Secret
+    # Sync manifests to selected repository
+    #############################################
+
+    sync_gitops_repo
+
+    #############################################
+    # Configure Argo CD repository secret
     #############################################
 
     configure_argocd_repository
 
     #############################################
-    # Restart Repo Server
+    # Restart repo-server
     #############################################
 
     log_info "Restarting Argo CD repo-server..."
@@ -780,14 +966,14 @@ bootstrap_gitops() {
     log_ok "Argo CD repo-server restarted."
 
     #############################################
-    # Install Project
+    # Install project
     #############################################
 
     kubectl apply \
         -f "${ROOT_DIR}/bootstrap/projects/default-project.yaml"
 
     #############################################
-    # Generate Root Application
+    # Generate root application
     #############################################
 
     mkdir -p "${ROOT_DIR}/generated"
@@ -799,14 +985,14 @@ bootstrap_gitops() {
         > "${ROOT_DIR}/generated/root-app.yaml"
 
     #############################################
-    # Install Root Application
+    # Install root application
     #############################################
 
     kubectl apply \
         -f "${ROOT_DIR}/generated/root-app.yaml"
 
     #############################################
-    # Force Initial Refresh
+    # Force initial refresh
     #############################################
 
     kubectl annotate application homelab-root \
@@ -818,7 +1004,12 @@ bootstrap_gitops() {
 }
 
 
+#############################################
+# ARGO CD REPLICA SCALER
+#############################################
+
 install_argocd_replica_scaler() {
+
     log_info "Installing Argo CD replica scaler..."
 
     cat >/usr/local/sbin/argocd-replica-scaler.sh <<'EOF'
@@ -828,8 +1019,10 @@ set -euo pipefail
 
 export KUBECONFIG=/etc/kubernetes/admin.conf
 
-READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | \
-    awk '$2 == "Ready" && $0 !~ /SchedulingDisabled/ {count++} END {print count+0}')
+READY_NODES=$(
+    kubectl get nodes --no-headers 2>/dev/null |
+        awk '$2 == "Ready" && $0 !~ /SchedulingDisabled/ {count++} END {print count+0}'
+)
 
 if (( READY_NODES >= 2 )); then
     DESIRED_REPLICAS=2
@@ -842,12 +1035,17 @@ for deployment in \
     argocd-repo-server \
     argocd-applicationset-controller
 do
+
     if kubectl -n argocd get deployment "${deployment}" >/dev/null 2>&1; then
-        CURRENT_REPLICAS=$(kubectl -n argocd \
-            get deployment "${deployment}" \
-            -o jsonpath='{.spec.replicas}')
+
+        CURRENT_REPLICAS=$(
+            kubectl -n argocd \
+                get deployment "${deployment}" \
+                -o jsonpath='{.spec.replicas}'
+        )
 
         if [[ "${CURRENT_REPLICAS}" != "${DESIRED_REPLICAS}" ]]; then
+
             logger -t argocd-replica-scaler \
                 "Ready nodes=${READY_NODES}; scaling ${deployment} ${CURRENT_REPLICAS} -> ${DESIRED_REPLICAS}"
 
