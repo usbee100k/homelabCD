@@ -129,6 +129,14 @@ upload_bootstrap_package() {
 -i ${SSH_KEY_PATH}"
 
     #############################################
+    # Target branch
+    #############################################
+
+    local TARGET_BRANCH
+
+    TARGET_BRANCH="${GIT_BRANCH:-main}"
+
+    #############################################
     # Temporary directory
     #############################################
 
@@ -137,7 +145,7 @@ upload_bootstrap_package() {
     rm -rf "${TEMP_DIR}"
 
     #############################################
-    # Prepare repository
+    # Clone bootstrap repository
     #############################################
 
     log_info "Cloning bootstrap repository..."
@@ -156,6 +164,46 @@ upload_bootstrap_package() {
     fi
 
     #############################################
+    # Fetch all remote branches
+    #############################################
+
+    log_info "Fetching bootstrap repository branches..."
+
+    if ! GIT_SSH_COMMAND="${GIT_SSH_COMMAND}" \
+        git -C "${TEMP_DIR}" fetch origin; then
+
+        log_error "Failed to fetch bootstrap repository."
+
+        rm -rf "${TEMP_DIR}"
+
+        return 1
+    fi
+
+    #############################################
+    # Select target branch
+    #############################################
+
+    if git -C "${TEMP_DIR}" \
+        show-ref --verify --quiet \
+        "refs/remotes/origin/${TARGET_BRANCH}"; then
+
+        log_info "Using existing remote branch: ${TARGET_BRANCH}"
+
+        git -C "${TEMP_DIR}" checkout -B \
+            "${TARGET_BRANCH}" \
+            "origin/${TARGET_BRANCH}"
+
+    else
+
+        log_warn "Remote branch '${TARGET_BRANCH}' does not exist."
+
+        log_info "Creating branch '${TARGET_BRANCH}' from current repository state."
+
+        git -C "${TEMP_DIR}" checkout -B \
+            "${TARGET_BRANCH}"
+    fi
+
+    #############################################
     # Copy encrypted bootstrap package
     #############################################
 
@@ -166,7 +214,7 @@ upload_bootstrap_package() {
         "${TEMP_DIR}/"
 
     #############################################
-    # Configure repository
+    # Configure Git identity
     #############################################
 
     git -C "${TEMP_DIR}" config user.name \
@@ -214,15 +262,18 @@ upload_bootstrap_package() {
     # Push
     #############################################
 
-    log_info "Pushing encrypted bootstrap package..."
+    log_info "Pushing encrypted bootstrap package to ${TARGET_BRANCH}..."
 
     if ! GIT_SSH_COMMAND="${GIT_SSH_COMMAND}" \
         git -C "${TEMP_DIR}" push \
-            origin \
-            "${GIT_BRANCH:-main}"; then
+            -u origin \
+            "${TARGET_BRANCH}"; then
 
         log_error "Git push failed."
-        log_error "Verify that the selected deploy key has 'Allow write access'."
+        log_error "Repository:"
+        log_error "${BOOTSTRAP_REPO}"
+        log_error "Branch:"
+        log_error "${TARGET_BRANCH}"
 
         rm -rf "${TEMP_DIR}"
 
