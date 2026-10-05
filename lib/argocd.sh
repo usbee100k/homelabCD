@@ -316,7 +316,17 @@ configure_gitops_repository() {
         sed -i '/^GITHUB_REPO=/d' \
             "${ROOT_DIR}/config/defaults.env"
 
-        printf 'GITHUB_REPO="%s"\n' "${GITHUB_REPO}" \
+        # Make sure the file ends with a newline before appending.
+        if [[ -s "${ROOT_DIR}/config/defaults.env" ]]; then
+            LAST_BYTE="$(tail -c 1 "${ROOT_DIR}/config/defaults.env" | od -An -t x1 | tr -d ' ')"
+
+            if [[ "${LAST_BYTE}" != "0a" ]]; then
+                printf '\n' >> "${ROOT_DIR}/config/defaults.env"
+            fi
+        fi
+
+        printf 'GITHUB_REPO="%s"\n' \
+            "${GITHUB_REPO}" \
             >> "${ROOT_DIR}/config/defaults.env"
 
         log_ok "GITHUB_REPO updated to ${GITHUB_REPO}"
@@ -732,6 +742,17 @@ sync_gitops_repo() {
 
     GITOPS_BRANCH="${GIT_BRANCH:-main}"
 
+    # Protect against a malformed defaults.env where GITHUB_REPO
+    # was accidentally appended to the GIT_BRANCH value.
+    if [[ "${GITOPS_BRANCH}" == *"GITHUB_REPO="* ]]; then
+        log_warn "Detected malformed GIT_BRANCH value:"
+        log_warn "  ${GITOPS_BRANCH}"
+        log_warn "Falling back to branch 'main'."
+
+        GITOPS_BRANCH="main"
+        export GIT_BRANCH="main"
+    fi
+
     #############################################
     # Ensure local branch exists
     #############################################
@@ -840,11 +861,6 @@ sync_gitops_repo() {
     log_ok "GitOps repository updated."
 }
 
-
-#############################################
-# GITOPS BOOTSTRAP
-#############################################
-
 #############################################
 # GITOPS BOOTSTRAP
 #############################################
@@ -910,12 +926,15 @@ bootstrap_gitops() {
     done
 
     #############################################
-    # EXPORT VARIABLES
+    # SET REPOSITORY VARIABLES
     #############################################
+
+    BOOTSTRAP_REPO="${GITHUB_REPO}"
 
     export GITHUB_USER
     export GITOPS_REPO
     export GITHUB_REPO
+    export BOOTSTRAP_REPO
 
     log_ok "GitHub repository selected:"
     log_ok "${GITHUB_REPO}"
@@ -926,13 +945,37 @@ bootstrap_gitops() {
 
     if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
 
+        # Remove old values.
         sed -i '/^GITHUB_REPO=/d' \
             "${ROOT_DIR}/config/defaults.env"
 
-        printf 'GITHUB_REPO="%s"\n' "${GITHUB_REPO}" \
+        sed -i '/^BOOTSTRAP_REPO=/d' \
+            "${ROOT_DIR}/config/defaults.env"
+
+        # Make sure the file ends with a newline.
+        if [[ -s "${ROOT_DIR}/config/defaults.env" ]]; then
+
+            LAST_BYTE="$(
+                tail -c 1 "${ROOT_DIR}/config/defaults.env" |
+                    od -An -t x1 |
+                    tr -d ' '
+            )"
+
+            if [[ "${LAST_BYTE}" != "0a" ]]; then
+                printf '\n' >> "${ROOT_DIR}/config/defaults.env"
+            fi
+        fi
+
+        # Save selected repository.
+        printf 'GITHUB_REPO="%s"\n' \
+            "${GITHUB_REPO}" \
             >> "${ROOT_DIR}/config/defaults.env"
 
-        log_ok "GITHUB_REPO saved to config/defaults.env"
+        printf 'BOOTSTRAP_REPO="%s"\n' \
+            "${BOOTSTRAP_REPO}" \
+            >> "${ROOT_DIR}/config/defaults.env"
+
+        log_ok "GitHub repository saved to config/defaults.env"
     fi
 
     #############################################
@@ -1011,7 +1054,6 @@ bootstrap_gitops() {
 
     log_ok "GitOps bootstrap complete."
 }
-
 
 #############################################
 # ARGO CD REPLICA SCALER
