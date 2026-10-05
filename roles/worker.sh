@@ -214,7 +214,16 @@ join_worker() {
 
     next_step "Retrieving Cluster Join Credentials"
 
-    if [[ "${HOMELAB_REMOTE_MODE:-false}" == "true" ]]; then
+    if [[ "${HOMELAB_JOIN_PROVIDED:-false}" == "true" \
+        && -f "${ROOT_DIR}/generated/secrets/worker_join.sh" ]]; then
+
+        #####################################
+        # Fresh join command generated and installed by KubesTUI
+        #####################################
+
+        log_ok "Using fresh join command provided by KubesTUI."
+
+    elif [[ "${HOMELAB_REMOTE_MODE:-false}" == "true" ]]; then
 
         #####################################
         # Remote mode (launched by KubesTUI)
@@ -372,6 +381,10 @@ join_worker() {
         exit 1
 
     fi
+
+
+    # The join script contains a bootstrap token; do not leave it on disk.
+    rm -f "${ROOT_DIR}/generated/secrets/worker_join.sh"
 
 
     finish_step
