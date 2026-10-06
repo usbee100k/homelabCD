@@ -1,58 +1,40 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-
 metadata:
-
   name: metallb
-
   namespace: argocd
-
   annotations:
-
     argocd.argoproj.io/sync-wave: "10"
 
-
 spec:
-
   project: homelab
 
-
   sources:
-
-
+    # MetalLB Helm chart
     - repoURL: https://metallb.github.io/metallb
-
       chart: metallb
-
       targetRevision: 0.15.2
-
-
       helm:
-
         valueFiles:
-
           - $values/apps/infrastructure/metallb/values.yaml
 
-
-
-    - repoURL: REPLACE_ME
-
-      targetRevision: main
-
+    # Git repository used for Helm values
+    - repoURL: REPLACE_REPO_URL
+      targetRevision: REPLACE_BRANCH
       ref: values
 
+    # MetalLB custom resources: IPAddressPool + L2Advertisement
+    - repoURL: REPLACE_REPO_URL
+      targetRevision: REPLACE_BRANCH
+      path: apps/infrastructure/metallb/config
 
   destination:
-
     server: https://kubernetes.default.svc
-
     namespace: metallb-system
 
-
   syncPolicy:
-
     automated:
-
       prune: true
-
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -27,6 +27,8 @@ load_config() {
 
     BASE_DOMAIN=$(yq '.domains.base' "${CONFIG_FILE}")
 
+    ACME_EMAIL=$(yq '.domains.acmeEmail' "${CONFIG_FILE}")
+
 
     if [[ "${GITHUB_REPO}" == "null" ]]; then
         GITHUB_REPO=""
@@ -37,9 +39,14 @@ load_config() {
         BASE_DOMAIN=""
     fi
 
+    if [[ "${ACME_EMAIL}" == "null" ]]; then
+        ACME_EMAIL=""
+    fi
+
     export LOCAL_IP
     export VIP_ADDRESS
     export BASE_DOMAIN
+    export ACME_EMAIL
 }
 
 
@@ -51,5 +58,9 @@ save_config() {
 
     yq -i \
         ".domains.base = \"${BASE_DOMAIN}\"" \
+        "${CONFIG_FILE}"
+
+    yq -i \
+        ".domains.acmeEmail = \"${ACME_EMAIL:-}\"" \
         "${CONFIG_FILE}"
 }

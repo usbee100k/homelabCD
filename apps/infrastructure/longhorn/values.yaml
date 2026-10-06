@@ -1,12 +1,89 @@
+# apps/infrastructure/longhorn/values.yaml
+
+# CRITICAL: Disable pre-upgrade checker for ArgoCD compatibility
+# Without this, ArgoCD fails because the job runs before the ServiceAccount exists.
+preUpgradeChecker:
+  jobEnabled: false
+  upgradeVersionCheck: false
+
+# Global tolerations ensure CSI plugins, Instance Managers, and other 
+# dynamically created components also schedule on tainted control-plane nodes.
+global:
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/master"
+      operator: "Exists"
+      effect: "NoSchedule"
+
+# Longhorn Manager DaemonSet
+longhornManager:
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/master"
+      operator: "Exists"
+      effect: "NoSchedule"
+
+# Longhorn Driver Deployer
+longhornDriver:
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/master"
+      operator: "Exists"
+      effect: "NoSchedule"
+
+# Longhorn UI Deployment (Previously missing)
+longhornUI:
+  replicas: 2
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/master"
+      operator: "Exists"
+      effect: "NoSchedule"
+
+# Webhooks (Required for validation/mutation)
+longhornConversionWebhook:
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/master"
+      operator: "Exists"
+      effect: "NoSchedule"
+
+longhornAdmissionWebhook:
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/master"
+      operator: "Exists"
+      effect: "NoSchedule"
+
+# Default Runtime Settings
 defaultSettings:
+  # Fixed: Pinning the default engine version natively so Gitops enforces its deployment
+  defaultEngineImage: "longhornio/longhorn-engine:v1.9.0"
 
   defaultReplicaCount: 3
-
   replicaSoftAntiAffinity: true
-
   storageMinimalAvailablePercentage: 10
+  # CRITICAL: Prevents Longhorn from using disks on nodes not explicitly labeled
+  # You MUST run: kubectl label nodes <node-name> node.longhorn.io/create-default-disk=true
+  createDefaultDiskLabeledNodes: true
+  # Optional: Improve rebuild speed in homelabs
+  fastReplicaRebuildEnabled: true
 
-
+# Storage Class Configuration
 persistence:
-
   defaultClass: true
+  defaultClassReplicaCount: 3
+  reclaimPolicy: Delete
+  volumeBindingMode: Immediate

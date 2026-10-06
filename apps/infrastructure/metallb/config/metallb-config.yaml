@@ -1,0 +1,25 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: default-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 192.168.50.200-192.168.50.220
+  autoAssign: true
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: default-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - default-pool
+  nodeSelectors:
+    - matchLabels:
+        kubernetes.io/hostname: k8s-control2
+    - matchLabels:
+        kubernetes.io/hostname: k87-controler
+    - matchLabels:
+        kubernetes.io/hostname: tc-worker

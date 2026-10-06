@@ -88,6 +88,12 @@ bootstrap_cluster() {
 
     configure_base_domain
 
+    #############################################
+    # Let's Encrypt ACME Email
+    #############################################
+
+    configure_acme_email
+
 
     next_step "Validating Host"
 

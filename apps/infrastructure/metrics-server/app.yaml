@@ -30,9 +30,9 @@ spec:
           - $values/apps/infrastructure/metrics-server/values.yaml
 
 
-    - repoURL: REPLACE_ME
+    - repoURL: REPLACE_REPO_URL
 
-      targetRevision: main
+      targetRevision: REPLACE_BRANCH
 
       ref: values
 

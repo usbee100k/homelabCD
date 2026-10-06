@@ -1,37 +1,44 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
+
 metadata:
-  name: longhorn
+  name: rancher
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "30"
+
 spec:
   project: homelab
+
   sources:
-    # 1. Define the Git repo FIRST so ArgoCD instantiates the 'values' variable
+
+    # 1. Git repository containing values.yaml
     - repoURL: REPLACE_REPO_URL
       targetRevision: REPLACE_BRANCH
       ref: values
 
-    # 2. Define the Helm chart SECOND so it can successfully consume $values
-    - repoURL: https://charts.longhorn.io
-      chart: longhorn
-      targetRevision: 1.9.0
+    # 2. Rancher Helm chart
+    - repoURL: https://releases.rancher.com/server-charts/latest
+      chart: rancher
+      targetRevision: 2.15.2
       helm:
         valueFiles:
-          - $values/apps/infrastructure/longhorn/values.yaml
+          - $values/apps/infrastructure/rancher/values.yaml
 
+    # 3. Additional Kubernetes resources
     - repoURL: REPLACE_REPO_URL
       targetRevision: REPLACE_BRANCH
-      path: apps/infrastructure/longhorn/resources
+      path: apps/infrastructure/rancher/resources
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: longhorn-system
+    namespace: cattle-system
+
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true

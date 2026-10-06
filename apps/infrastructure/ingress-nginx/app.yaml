@@ -6,7 +6,7 @@ metadata:
   namespace: argocd
   annotations:
 
-    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/sync-wave: "20"
 
 
 spec:
@@ -28,11 +28,17 @@ spec:
           - $values/apps/infrastructure/ingress-nginx/values.yaml
 
 
-    - repoURL: REPLACE_ME
+    - repoURL: REPLACE_REPO_URL
 
-      targetRevision: main
+      targetRevision: REPLACE_BRANCH
 
       ref: values
+    
+    - repoURL: REPLACE_REPO_URL
+      
+      targetRevision: REPLACE_BRANCH
+      
+      path: apps/infrastructure/ingress-nginx/resources
 
 
   destination:

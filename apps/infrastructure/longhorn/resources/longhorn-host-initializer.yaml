@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: longhorn-host-initializer
+  namespace: longhorn-system
+  labels:
+    app: longhorn-host-initializer
+spec:
+  selector:
+    matchLabels:
+      name: longhorn-host-initializer
+  template:
+    metadata:
+      labels:
+        name: longhorn-host-initializer
+    spec:
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+
+      hostNetwork: true
+      hostPID: true
+
+      initContainers:
+        - name: host-provisioner
+          image: alpine:latest
+          securityContext:
+            privileged: true
+
+          command:
+            - nsenter
+            - "--target"
+            - "1"
+            - "--mount"
+            - "--uts"
+            - "--ipc"
+            - "--net"
+            - "--"
+            - sh
+            - -c
+            - |
+              echo "=== Starting Longhorn Host Pre-requisite Configuration ==="
+
+              # 1. Detect OS and install Longhorn prerequisites
+              if command -v apt-get >/dev/null 2>&1; then
+                echo "Detected Debian/Ubuntu based system..."
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update && apt-get install -y open-iscsi cryptsetup nfs-common util-linux
+              elif command -v dnf >/dev/null 2>&1; then
+                echo "Detected RHEL/Rocky based system..."
+                dnf install -y iscsi-initiator-utils cryptsetup nfs-utils util-linux
+              fi
+
+              # 2. Configure and enable iSCSI
+              echo "Starting and enabling iSCSI services..."
+              systemctl daemon-reload
+              systemctl enable --now iscsid
+
+              # 3. Load required kernel modules
+              echo "Loading required storage kernel modules..."
+              modprobe iscsi_tcp
+              modprobe dm_crypt
+
+              # 4. Make modules persistent across node restarts
+              if [ -d /etc/modules-load.d ]; then
+                echo -e "iscsi_tcp\ndm_crypt" > /etc/modules-load.d/longhorn.conf
+              elif [ -f /etc/modules ]; then
+                echo "iscsi_tcp" >> /etc/modules
+                echo "dm_crypt" >> /etc/modules
+              fi
+
+              # 5. Disable conflicting multipath services
+              if systemctl is-active --quiet multipathd; then
+                echo "Disabling conflicting multipathd service..."
+                systemctl disable --now multipathd
+                systemctl mask multipathd
+              fi
+
+              echo "=== Longhorn Host Configuration Complete ==="
+
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+
+      containers:
+        - name: sleep-forever
+          image: registry.k8s.io/pause:3.10
+          resources:
+            limits:
+              cpu: 10m
+              memory: 16Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi

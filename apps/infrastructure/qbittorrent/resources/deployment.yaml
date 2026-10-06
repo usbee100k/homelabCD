@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qbittorrent
+  namespace: qbittorrent
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: qbittorrent
+
+  strategy:
+    type: Recreate
+
+  template:
+    metadata:
+      labels:
+        app: qbittorrent
+
+    spec:
+#      tolerations:
+#        - key: "node-role.kubernetes.io/control-plane"
+#          operator: "Exists"
+#          effect: "NoSchedule"
+#        - key: "node-role.kubernetes.io/master"
+#          operator: "Exists"
+#          effect: "NoSchedule"
+# THIS IS FOR CONTROL PLANES TO RUN QBIT ON THEM  NOTE TO SELF: I'd keep your current Deployment worker-only and focus
+# next on making Longhorn automatically recover the RWO attachments when a worker disappears.
+      containers:
+        - name: qbittorrent
+          image: ghcr.io/hotio/qbittorrent:release-5.0.4
+
+          env:
+            - name: PGID
+              value: "1000"
+
+            - name: PUID
+              value: "1000"
+
+            - name: TZ
+              value: "Etc/UTC"
+
+            - name: UMASK
+              value: "002"
+
+            - name: VPN_NAMESERVERS
+              value: "false"
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 8Gi
+
+          volumeMounts:
+            # qBittorrent configuration/database
+            - name: qbittorrent-config
+              mountPath: /config
+
+            # Actual torrent downloads
+            - name: qbittorrent-downloads
+              mountPath: /torrents
+
+      restartPolicy: Always
+
+      volumes:
+        - name: qbittorrent-config
+          persistentVolumeClaim:
+            claimName: qbittorrent-config
+
+        - name: qbittorrent-downloads
+          persistentVolumeClaim:
+            claimName: qbittorrent-downloads

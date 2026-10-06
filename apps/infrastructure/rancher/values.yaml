@@ -1,0 +1,36 @@
+# apps/infrastructure/rancher/values.yaml
+
+# Rancher URL
+hostname: __HOSTNAME__
+
+# Run multiple Rancher replicas
+replicas: 3
+
+# Allow Rancher pods to run on tainted control-plane nodes
+tolerations:
+  - key: "node-role.kubernetes.io/control-plane"
+    operator: "Exists"
+    effect: "NoSchedule"
+
+  - key: "node-role.kubernetes.io/master"
+    operator: "Exists"
+    effect: "NoSchedule"
+
+# We manage the Ingress separately through resources/ingress.yaml
+ingress:
+  enabled: false
+
+# Rancher resources
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+  limits:
+    cpu: 2
+    memory: 4Gi
+
+# Keep at least one Rancher pod available during voluntary disruptions
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

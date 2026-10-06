@@ -8,6 +8,10 @@ ingresses:
     path: apps/infrastructure/rancher/resources/ingress.yaml
     subdomain: rancher
 
+  - name: rancher-hostname
+    path: apps/infrastructure/rancher/values.yaml
+    subdomain: rancher
+
   - name: longhorn
     path: apps/infrastructure/longhorn/resources/ingress.yaml
     subdomain: longhorn

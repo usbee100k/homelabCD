@@ -54,6 +54,53 @@ configure_base_domain() {
 
 
 #############################################
+# LET'S ENCRYPT ACME EMAIL
+#############################################
+
+configure_acme_email() {
+
+    if [[ -n "${ACME_EMAIL:-}" ]]; then
+        log_ok "Let's Encrypt email: ${ACME_EMAIL}"
+        return 0
+    fi
+
+    echo
+    echo "============================================="
+    echo " Let's Encrypt Email"
+    echo "============================================="
+    echo
+    echo "cert-manager uses this address for ACME"
+    echo "account registration and expiry notices."
+    echo
+
+    while true; do
+
+        read -rp "Let's Encrypt email: " ACME_EMAIL
+
+        ACME_EMAIL="${ACME_EMAIL//[[:space:]]/}"
+
+        if [[ -z "${ACME_EMAIL}" ]]; then
+            echo "[ERROR] Email cannot be empty."
+            continue
+        fi
+
+        if [[ "${ACME_EMAIL}" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+            break
+        fi
+
+        echo "[ERROR] Invalid email: ${ACME_EMAIL}"
+
+    done
+
+    export ACME_EMAIL
+
+    save_config
+
+    log_ok "Let's Encrypt email saved: ${ACME_EMAIL}"
+}
+
+
+#############################################
 # RENDER GITOPS INGRESSES
 #############################################
 

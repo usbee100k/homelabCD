@@ -1,18 +1,19 @@
 controller:
-
   replicaCount: 2
 
-
   service:
-
     externalTrafficPolicy: Local
 
-
   metrics:
-
     enabled: true
 
+  admissionWebhooks:
+    enabled: true
+
+    patch:
+      enabled: true
+      podAnnotations:
+        homelab/webhook-repair: "1"
 
 defaultBackend:
-
   enabled: true

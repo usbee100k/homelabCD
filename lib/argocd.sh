@@ -800,12 +800,16 @@ sync_gitops_repo() {
 
     log_info "Updating GitOps manifests..."
 
+    [[ -n "${ACME_EMAIL:-}" ]] || \
+        die "ACME_EMAIL missing"
+
     find "${GITOPS_DIR}" \
         -type f \
         \( -name "*.yaml" -o -name "*.yml" \) \
         -exec sed -i \
             -e "s|REPLACE_REPO_URL|${SSH_REPO_URL}|g" \
             -e "s|REPLACE_BRANCH|${GITOPS_BRANCH}|g" \
+            -e "s|REPLACE_ACME_EMAIL|${ACME_EMAIL}|g" \
             {} +
 
     #############################################
