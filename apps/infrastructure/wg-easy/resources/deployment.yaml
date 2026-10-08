@@ -1,0 +1,117 @@
+# Clients get 10.8.0.x and are NATed into REPLACE_VPN_ALLOWED_IPS (the node
+# subnet). The admin login comes from the wg-easy-init Secret the installer
+# creates (never stored in git); wg-easy only reads INIT_* on first start.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wg-easy
+  namespace: wg-easy
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: wg-easy
+
+  strategy:
+    type: Recreate   # one WireGuard interface owns the volume at a time
+
+  template:
+    metadata:
+      labels:
+        app: wg-easy
+
+    spec:
+      initContainers:
+        # Packet forwarding inside this pod's own network namespace only;
+        # the node's settings are not touched.
+        - name: sysctls
+          image: busybox:1.37
+          securityContext:
+            privileged: true
+          command:
+            - sh
+            - -c
+            - sysctl -w net.ipv4.ip_forward=1 net.ipv4.conf.all.src_valid_mark=1
+
+      containers:
+        - name: wg-easy
+          image: ghcr.io/wg-easy/wg-easy:15.4.0
+
+          env:
+            - name: INIT_ENABLED
+              value: "true"
+
+            - name: INIT_HOST
+              value: "REPLACE_VPN_ENDPOINT"
+
+            - name: INIT_PORT
+              value: "REPLACE_VPN_PORT"
+
+            - name: INIT_ALLOWED_IPS
+              value: "REPLACE_VPN_ALLOWED_IPS"
+
+            - name: INIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: wg-easy-init
+                  key: INIT_USERNAME
+                  optional: true
+
+            - name: INIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wg-easy-init
+                  key: INIT_PASSWORD
+                  optional: true
+
+            - name: DISABLE_IPV6
+              value: "true"
+
+          ports:
+            - name: wireguard
+              containerPort: REPLACE_VPN_PORT
+              protocol: UDP
+
+            - name: http
+              containerPort: 51821
+              protocol: TCP
+
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - SYS_MODULE
+
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "wg show | grep -q interface"]
+            initialDelaySeconds: 10
+            periodSeconds: 20
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+
+          volumeMounts:
+            - name: wg-easy-data
+              mountPath: /etc/wireguard
+
+            - name: modules
+              mountPath: /lib/modules
+              readOnly: true
+
+      restartPolicy: Always
+
+      volumes:
+        - name: wg-easy-data
+          persistentVolumeClaim:
+            claimName: wg-easy-data
+
+        - name: modules
+          hostPath:
+            path: /lib/modules

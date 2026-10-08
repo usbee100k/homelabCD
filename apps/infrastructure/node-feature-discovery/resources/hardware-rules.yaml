@@ -1,0 +1,72 @@
+# Turns NFD's raw hardware features into short homelab labels.
+# Rules are re-evaluated every minute, so labels follow hardware
+# changes and apply to nodes that join later.
+#
+# Use them in a workload with e.g.:
+#   nodeSelector:
+#     homelab.io/gpu: "true"
+
+apiVersion: nfd.k8s-sigs.io/v1alpha1
+kind: NodeFeatureRule
+metadata:
+  name: homelab-hardware
+  annotations:
+    # The CRD comes from the chart in this same Application.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  rules:
+
+    # PCI class 03xx = display controller. Detected from the PCI bus,
+    # so it works before any GPU driver is installed.
+    - name: "homelab gpu nvidia"
+      labels:
+        homelab.io/gpu: "true"
+        homelab.io/gpu-vendor: "nvidia"
+      matchFeatures:
+        - feature: pci.device
+          matchExpressions:
+            class: {op: InRegexp, value: ["^03"]}
+            vendor: {op: In, value: ["10de"]}
+
+    # Also matches the integrated graphics on Ryzen APUs.
+    - name: "homelab gpu amd"
+      labels:
+        homelab.io/gpu: "true"
+        homelab.io/gpu-vendor: "amd"
+      matchFeatures:
+        - feature: pci.device
+          matchExpressions:
+            class: {op: InRegexp, value: ["^03"]}
+            vendor: {op: In, value: ["1002"]}
+
+    # Intel integrated graphics (Quick Sync video transcoding).
+    # Kept separate from homelab.io/gpu so a GPU workload does not
+    # land on an iGPU-only node.
+    - name: "homelab igpu intel"
+      labels:
+        homelab.io/igpu: "intel"
+      matchFeatures:
+        - feature: pci.device
+          matchExpressions:
+            class: {op: InRegexp, value: ["^03"]}
+            vendor: {op: In, value: ["8086"]}
+
+    # Any SATA/SAS or NVMe disk that is non-rotational. Restricting the
+    # device name skips loop, zram and SD-card (mmcblk) devices.
+    - name: "homelab storage ssd"
+      labels:
+        homelab.io/storage: "ssd"
+      matchFeatures:
+        - feature: storage.block
+          matchExpressions:
+            name: {op: InRegexp, value: ["^(sd[a-z]+|nvme[0-9]+n[0-9]+)$"]}
+            rotational: {op: In, value: ["0"]}
+
+    - name: "homelab storage nvme"
+      labels:
+        homelab.io/nvme: "true"
+      matchFeatures:
+        - feature: storage.block
+          matchExpressions:
+            name: {op: InRegexp, value: ["^nvme[0-9]+n[0-9]+$"]}

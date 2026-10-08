@@ -104,8 +104,10 @@ remote_join_node() {
     fi
 
     mkdir -p "${ROOT_DIR}/generated/secrets"
-    if [[ -f "${ROOT_DIR}/generated/controlplane_join.sh" && ! -f "${ROOT_DIR}/generated/secrets/controlplane_join.sh" ]]; then
-        cp "${ROOT_DIR}/generated/controlplane_join.sh" \
+    # Always take the freshly generated command: the certificate key
+    # in an older copy expires 2 hours after it was created.
+    if [[ -f "${ROOT_DIR}/generated/controlplane_join.sh" ]]; then
+        cp -f "${ROOT_DIR}/generated/controlplane_join.sh" \
             "${ROOT_DIR}/generated/secrets/controlplane_join.sh"
     fi
 

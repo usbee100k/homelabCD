@@ -1,7 +1,7 @@
 ingresses:
 
   - name: argocd
-    path: apps/websites/ingress.yaml
+    path: bootstrap/argocd/ingress.yaml
     subdomain: argocd
 
   - name: rancher
@@ -19,6 +19,10 @@ ingresses:
   - name: qbittorrent
     path: apps/infrastructure/qbittorrent/resources/ingress.yaml
     subdomain: qbittorrent
+
+  - name: wg-easy
+    path: apps/infrastructure/wg-easy/resources/ingress.yaml
+    subdomain: wg
 
 # ADDING NEW ONES EXAMPLE:
 #  - name: grafana

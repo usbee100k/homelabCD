@@ -1,6 +1,23 @@
 controller:
   replicaCount: 2
 
+  # Run only on nodes MetalLB announces from (lib/metallb.sh).
+  # With externalTrafficPolicy: Local the ingress IP only answers
+  # on nodes that host a controller pod, so the two must match.
+  nodeSelector:
+    homelab.io/metallb-announce: "true"
+
+  # Prefer one replica per node so losing a node keeps ingress up.
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+          app.kubernetes.io/component: controller
+
+
   service:
     externalTrafficPolicy: Local
 

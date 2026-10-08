@@ -3,6 +3,33 @@
 set -Eeuo pipefail
 
 #############################################
+# CURRENT NODE NAME
+#############################################
+#
+# kubeadm registers the node under the lowercased hostname,
+# which may be the FQDN or the short name depending on how
+# the host is configured. Prints whichever one exists.
+#############################################
+
+current_node_name() {
+
+    local name
+
+    for name in \
+        "$(hostname | tr '[:upper:]' '[:lower:]')" \
+        "$(hostname -s | tr '[:upper:]' '[:lower:]')"
+    do
+        if kubectl get node "${name}" >/dev/null 2>&1; then
+            echo "${name}"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+
+#############################################
 # NODE LABELS
 #############################################
 
@@ -15,7 +42,7 @@ apply_node_labels() {
     #############################################
 
     local NODE_NAME
-    NODE_NAME="$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')"
+    NODE_NAME="$(current_node_name)" || NODE_NAME=""
 
     if [[ -z "${NODE_NAME}" ]]; then
         log_error "Unable to determine Kubernetes node name."
@@ -60,4 +87,70 @@ apply_node_labels() {
     #############################################
 
     log_ok "Node labels configured."
+}
+
+#############################################
+# WORKER ROLE LABELER
+#############################################
+#
+# Nodes cannot set node-role.kubernetes.io/* on themselves
+# (NodeRestriction), and workers have no admin credentials,
+# so a control plane labels every non-control-plane node as
+# a worker. This fills the ROLES column of `kubectl get nodes`.
+#############################################
+
+install_worker_role_labeler() {
+
+    log_info "Installing worker role labeler..."
+
+    cat >/usr/local/sbin/worker-role-labeler.sh <<'EOF'
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+export KUBECONFIG=/etc/kubernetes/admin.conf
+
+kubectl get nodes \
+    -l '!node-role.kubernetes.io/control-plane,!node-role.kubernetes.io/worker' \
+    -o name |
+while read -r node; do
+
+    logger -t worker-role-labeler "Labelling ${node} as worker"
+
+    kubectl label "${node}" node-role.kubernetes.io/worker= --overwrite >/dev/null
+
+done
+EOF
+
+    chmod +x /usr/local/sbin/worker-role-labeler.sh
+
+    cat >/etc/systemd/system/worker-role-labeler.service <<'EOF'
+[Unit]
+Description=Worker Role Labeler
+After=network-online.target kubelet.service
+Wants=network-online.target
+Requires=kubelet.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/worker-role-labeler.sh
+EOF
+
+    cat >/etc/systemd/system/worker-role-labeler.timer <<'EOF'
+[Unit]
+Description=Label joined worker nodes with the worker role
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=60s
+Unit=worker-role-labeler.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable --now worker-role-labeler.timer
+
+    log_ok "Worker role labeler enabled."
 }

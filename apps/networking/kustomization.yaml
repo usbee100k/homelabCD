@@ -3,6 +3,4 @@ kind: Kustomization
 
 resources:
 
-  - metallb-config
-  - kube-vip
-  - external-dns
+  - duckdns/duckdns.yaml

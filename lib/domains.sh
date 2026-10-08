@@ -101,6 +101,195 @@ configure_acme_email() {
 
 
 #############################################
+# DUCKDNS
+#############################################
+#
+# The token is held in memory only and written to the
+# cluster as a Secret; it is never saved to config/ or
+# pushed to the GitOps repository.
+#############################################
+
+configure_duckdns() {
+
+    if [[ "${BASE_DOMAIN}" != *.duckdns.org ]]; then
+        log_info "Base domain is not a DuckDNS domain; skipping DuckDNS."
+        return 0
+    fi
+
+    DUCKDNS_DOMAIN="${BASE_DOMAIN%.duckdns.org}"
+    DUCKDNS_DOMAIN="${DUCKDNS_DOMAIN##*.}"
+
+    export DUCKDNS_DOMAIN
+
+    if [[ -n "${DUCKDNS_TOKEN:-}" ]]; then
+        log_ok "DuckDNS token provided for ${DUCKDNS_DOMAIN}.duckdns.org"
+        return 0
+    fi
+
+    echo
+    echo "============================================="
+    echo " DuckDNS"
+    echo "============================================="
+    echo
+    echo "The cluster keeps ${DUCKDNS_DOMAIN}.duckdns.org pointed at"
+    echo "the ingress-nginx LoadBalancer IP on your LAN. Every"
+    echo "*.${DUCKDNS_DOMAIN}.duckdns.org hostname resolves to it,"
+    echo "so services are reachable on your LAN only."
+    echo
+    echo "Find your token at https://www.duckdns.org"
+    echo
+
+    local result
+
+    while true; do
+
+        read -rsp "DuckDNS token: " DUCKDNS_TOKEN
+        echo
+
+        DUCKDNS_TOKEN="${DUCKDNS_TOKEN//[[:space:]]/}"
+
+        if [[ ! "${DUCKDNS_TOKEN}" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            echo "[ERROR] Token should look like xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            continue
+        fi
+
+        # Verify with the LAN VIP so the public IP is never published;
+        # the in-cluster updater replaces it with the ingress IP.
+        result=$(
+            curl -fsS --max-time 30 \
+                "https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=${VIP_ADDRESS}" \
+                2>/dev/null
+        ) || result=""
+
+        if [[ "${result}" == "OK" ]]; then
+            break
+        fi
+
+        echo "[ERROR] DuckDNS rejected the token for ${DUCKDNS_DOMAIN}.duckdns.org"
+
+    done
+
+    export DUCKDNS_TOKEN
+
+    log_ok "DuckDNS verified: ${DUCKDNS_DOMAIN}.duckdns.org"
+}
+
+
+install_duckdns_secret() {
+
+    if [[ -z "${DUCKDNS_DOMAIN:-}" || -z "${DUCKDNS_TOKEN:-}" ]]; then
+        log_info "DuckDNS not configured; skipping secret."
+        return 0
+    fi
+
+    log_info "Creating DuckDNS secret..."
+
+    kubectl create namespace duckdns \
+        --dry-run=client -o yaml |
+        kubectl apply -f -
+
+    kubectl -n duckdns create secret generic duckdns \
+        --from-literal=domain="${DUCKDNS_DOMAIN}" \
+        --from-literal=token="${DUCKDNS_TOKEN}" \
+        --dry-run=client -o yaml |
+        kubectl apply -f -
+
+    log_ok "DuckDNS secret created."
+}
+
+
+#############################################
+# METALLB IP POOL
+#############################################
+
+ip_to_int() {
+
+    local a b c d
+
+    IFS=. read -r a b c d <<< "$1"
+
+    echo $(( (a << 24) + (b << 16) + (c << 8) + d ))
+}
+
+
+configure_metallb_range() {
+
+    if [[ -n "${METALLB_RANGE:-}" ]]; then
+        log_ok "MetalLB IP pool: ${METALLB_RANGE}"
+        return 0
+    fi
+
+    local octet='(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])'
+    local ip="${octet}\\.${octet}\\.${octet}\\.${octet}"
+    local start end vip
+
+    echo
+    echo "============================================="
+    echo " MetalLB LoadBalancer IP Pool"
+    echo "============================================="
+    echo
+    echo "LoadBalancer services get IPs from this range."
+    echo "Use free addresses on your LAN, outside your"
+    echo "router's DHCP range, and not including the VIP"
+    echo "(${VIP_ADDRESS:-unset})."
+    echo
+    echo "Examples:"
+    echo "  192.168.50.200-192.168.50.220"
+    echo "  192.168.50.192/27"
+    echo
+
+    while true; do
+
+        read -rp "MetalLB IP range: " METALLB_RANGE
+
+        METALLB_RANGE="${METALLB_RANGE//[[:space:]]/}"
+
+        if [[ -z "${METALLB_RANGE}" ]]; then
+            echo "[ERROR] IP range cannot be empty."
+            continue
+        fi
+
+        if [[ "${METALLB_RANGE}" =~ ^${ip}/([0-9]|[12][0-9]|3[0-2])$ ]]; then
+            break
+        fi
+
+        if [[ "${METALLB_RANGE}" =~ ^(${ip})-(${ip})$ ]]; then
+
+            start=$(ip_to_int "${METALLB_RANGE%-*}")
+            end=$(ip_to_int "${METALLB_RANGE#*-}")
+
+            if (( start > end )); then
+                echo "[ERROR] Range start must be before range end."
+                continue
+            fi
+
+            if [[ -n "${VIP_ADDRESS:-}" && "${VIP_ADDRESS}" =~ ^${ip}$ ]]; then
+
+                vip=$(ip_to_int "${VIP_ADDRESS}")
+
+                if (( vip >= start && vip <= end )); then
+                    echo "[ERROR] Range contains the control plane VIP (${VIP_ADDRESS})."
+                    continue
+                fi
+            fi
+
+            break
+        fi
+
+        echo "[ERROR] Invalid range: ${METALLB_RANGE}"
+        echo "        Use START-END or CIDR notation."
+
+    done
+
+    export METALLB_RANGE
+
+    save_config
+
+    log_ok "MetalLB IP pool saved: ${METALLB_RANGE}"
+}
+
+
+#############################################
 # RENDER GITOPS INGRESSES
 #############################################
 

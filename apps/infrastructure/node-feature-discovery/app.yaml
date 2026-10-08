@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: node-feature-discovery
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+
+spec:
+  project: homelab
+
+  sources:
+    # Node Feature Discovery Helm chart (includes the NodeFeatureRule CRD)
+    - repoURL: https://kubernetes-sigs.github.io/node-feature-discovery/charts
+      chart: node-feature-discovery
+      targetRevision: 0.19.0
+      helm:
+        valueFiles:
+          - $values/apps/infrastructure/node-feature-discovery/values.yaml
+
+    # Git repository used for Helm values
+    - repoURL: REPLACE_REPO_URL
+      targetRevision: REPLACE_BRANCH
+      ref: values
+
+    # Homelab hardware labelling rules
+    - repoURL: REPLACE_REPO_URL
+      targetRevision: REPLACE_BRANCH
+      path: apps/infrastructure/node-feature-discovery/resources
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: node-feature-discovery
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

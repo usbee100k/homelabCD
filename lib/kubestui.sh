@@ -5,7 +5,8 @@
 #############################################
 
 install_go_toolchain() {
-    local go_ver="${GO_VERSION:-1.24.6}"
+    # Keep in step with the "go" line in KubesTUI's go.mod.
+    local go_ver="${GO_VERSION:-1.26.8}"
     local arch
     arch="$(uname -m)"
 
@@ -60,6 +61,8 @@ install_kubestui() {
 
     mkdir -p "${ROOT_DIR}/bin" "${ROOT_DIR}/.src"
 
+    install_kbtui_command
+
     if [[ -x "${dest}" && "${KUBESTUI_FORCE:-0}" != "1" ]]; then
         log_ok "KubesTUI already installed: ${dest}"
         return 0
@@ -93,4 +96,81 @@ install_kubestui() {
     chmod +x "${dest}"
 
     log_ok "KubesTUI installed: ${dest}"
+}
+
+
+#############################################
+# Workstation builds (Share KubesTUI)
+#############################################
+#
+# Cross-compiles KubesTUI for the computers that may control the cluster
+# (Windows, macOS, Linux; amd64 and arm64) into ${ROOT_DIR}/bin/dist,
+# with SHA256SUMS. KubesTUI's "Share KubesTUI with a Workstation" serves
+# these on the LAN; the file names match the GitHub release assets.
+#############################################
+
+build_kubestui_dist() {
+    local src="${KUBESTUI_SRC:-${ROOT_DIR}/.src/KubesTUI}"
+    local out="${ROOT_DIR}/bin/dist"
+    local version target os arch ext
+
+    install_go_toolchain
+
+    [[ -f "${src}/main.go" ]] || {
+        log_error "KubesTUI sources not found at ${src}. Run install.sh once to fetch them."
+        return 1
+    }
+
+    version="$(git -C "${src}" describe --tags --always --dirty 2>/dev/null || echo dev)"
+
+    mkdir -p "${out}"
+    rm -f "${out}"/kubestui-* "${out}/SHA256SUMS"
+
+    for target in windows/amd64 windows/arm64 darwin/amd64 darwin/arm64 linux/amd64 linux/arm64; do
+        os="${target%/*}"
+        arch="${target#*/}"
+        ext=""
+        [[ "${os}" == windows ]] && ext=".exe"
+
+        log_info "Building kubestui-${os}-${arch}${ext}"
+
+        (
+            cd "${src}"
+            CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" go build -trimpath \
+                -ldflags "-s -w -X main.version=${version}" \
+                -o "${out}/kubestui-${os}-${arch}${ext}" .
+        )
+    done
+
+    (cd "${out}" && sha256sum kubestui-* > SHA256SUMS)
+
+    log_ok "Workstation builds ready in ${out} (${version})"
+}
+
+
+#############################################
+# kbtui: single-word launcher
+#############################################
+#
+# KubesTUI needs the environment install.sh exports
+# (HOMELABCD_INSTALL, VIP_ADDRESS, ...), so the
+# launcher goes through install.sh, re-running
+# itself with sudo when needed.
+#############################################
+
+install_kbtui_command() {
+
+    local target="/usr/local/bin/kbtui"
+
+    cat >"${target}" <<EOF
+#!/usr/bin/env bash
+if (( EUID != 0 )); then
+    exec sudo bash "${ROOT_DIR}/install.sh" "\$@"
+fi
+exec bash "${ROOT_DIR}/install.sh" "\$@"
+EOF
+
+    chmod 755 "${target}"
+
+    log_ok "KubesTUI launcher installed: kbtui"
 }

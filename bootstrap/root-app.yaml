@@ -29,7 +29,6 @@ spec:
     namespace: argocd
 
 
-
   syncPolicy:
 
     automated:

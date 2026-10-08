@@ -42,9 +42,11 @@ LIBRARIES=(
     cilium
     argocd
     domains
+    vpn
+    metallb
     inventory
     node-labels
-    hardware-labels
+    longhorn-disk
     bootstrap-secrets
     bootstrap-upload
     bootstrap-download
@@ -94,6 +96,30 @@ bootstrap_cluster() {
 
     configure_acme_email
 
+    #############################################
+    # MetalLB LoadBalancer IP Pool
+    #############################################
+
+    configure_metallb_range
+
+    #############################################
+    # DuckDNS
+    #############################################
+
+    configure_duckdns
+
+    #############################################
+    # Dedicated Longhorn Disk (optional)
+    #############################################
+
+    select_longhorn_disk
+
+    #############################################
+    # WireGuard VPN (optional)
+    #############################################
+
+    configure_vpn
+
 
     next_step "Validating Host"
 
@@ -130,6 +156,8 @@ bootstrap_cluster() {
     next_step "Installing Kubernetes Packages"
 
     install_kubernetes
+
+    prepare_longhorn_disk
 
     finish_step
 
@@ -185,6 +213,10 @@ bootstrap_cluster() {
 
     wait_for_argocd
 
+    install_metallb_node_selector
+
+    install_worker_role_labeler
+
     finish_step
 
 
@@ -194,6 +226,10 @@ bootstrap_cluster() {
     generate_argocd_ssh_key
 
     verify_argocd_github_access
+
+    install_duckdns_secret
+
+    install_vpn_secret
 
     sync_gitops_repo
 
@@ -242,7 +278,6 @@ bootstrap_cluster() {
 
     apply_node_labels
 
-    detect_special_hardware
 
     finish_step
 

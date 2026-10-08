@@ -8,5 +8,7 @@ resources:
   - ingress-nginx/app.yaml
   - metrics-server/app.yaml
   - metallb/app.yaml
+  - node-feature-discovery/app.yaml
   - rancher/app.yaml
   - qbittorrent/app.yaml
+  - wg-easy/app.yaml   # removed by the GitOps sync when vpn.enabled is false

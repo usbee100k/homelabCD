@@ -178,7 +178,11 @@ LIBRARIES=(
     secrets
     inventory
     node-labels
-    hardware-labels
+    longhorn-disk
+    longhorn-migrate
+    domains
+    vpn
+    compose
     config
     github
     validation
@@ -310,6 +314,13 @@ source_optional "${ROOT_DIR}/config/encryption.env"
 
 load_config
 
+# install.sh runs as root; root has no ~/.kube/config because
+# configure_kubectl writes it for the sudo user. Use the admin
+# kubeconfig on control planes so kubectl works for every operation.
+if [[ -z "${KUBECONFIG:-}" && -f /etc/kubernetes/admin.conf ]]; then
+    export KUBECONFIG=/etc/kubernetes/admin.conf
+fi
+
 #############################################
 # Step 5 — Continue with Kubernetes Setup
 #############################################
@@ -346,11 +357,30 @@ if [[ "${INSTALLER_MODE}" == "--run" ]]; then
         join-commands)
             generate_join_commands
             ;;
+        longhorn-disk)
+            migrate_longhorn_disk
+            ;;
+        kubestui-dist)
+            build_kubestui_dist
+            ;;
+        vpn-setup)
+            setup_vpn
+            ;;
+        vpn-status)
+            vpn_status || exit 1
+            ;;
+        compose-import)
+            compose_import
+            ;;
+        compose-remove)
+            compose_remove
+            ;;
         health)
-            cluster_health
+            # Report failures through the exit code, not the ERR trap.
+            cluster_health || exit 1
             ;;
         config)
-            kubectl -n kube-system get cm kubeadm-config -o yaml
+            show_cluster_config
             ;;
         *)
             die "Unknown installer operation: ${INSTALLER_OP:-<empty>}"

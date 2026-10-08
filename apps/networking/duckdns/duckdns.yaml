@@ -1,0 +1,128 @@
+# LAN-only DNS: keeps <subdomain>.duckdns.org pointed at the
+# ingress-nginx MetalLB IP (a private LAN address). DuckDNS
+# wildcards every *.<subdomain>.duckdns.org to the same address,
+# so all ingress hostnames resolve on the LAN with no local DNS
+# records and nothing exposed to the internet.
+#
+# The "duckdns" Secret (keys: domain, token, optional vpn_domain) is created
+# by the installer and is never committed to git. vpn_domain, if set, is a
+# second name kept at your PUBLIC IP for the WireGuard VPN (lib/vpn.sh).
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: duckdns
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: duckdns-updater
+  namespace: duckdns
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: duckdns-read-ingress-service
+  namespace: ingress-nginx
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["ingress-nginx-controller"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: duckdns-read-ingress-service
+  namespace: ingress-nginx
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: duckdns-read-ingress-service
+subjects:
+  - kind: ServiceAccount
+    name: duckdns-updater
+    namespace: duckdns
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: duckdns-updater
+  namespace: duckdns
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: duckdns-updater
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 100
+          containers:
+            - name: duckdns
+              image: curlimages/curl:8.11.1
+              env:
+                - name: DUCKDNS_DOMAIN
+                  valueFrom:
+                    secretKeyRef:
+                      name: duckdns
+                      key: domain
+                      optional: true
+                - name: DUCKDNS_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: duckdns
+                      key: token
+                      optional: true
+                - name: DUCKDNS_VPN_DOMAIN
+                  valueFrom:
+                    secretKeyRef:
+                      name: duckdns
+                      key: vpn_domain
+                      optional: true
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  if [ -z "${DUCKDNS_DOMAIN}" ] || [ -z "${DUCKDNS_TOKEN}" ]; then
+                    echo "DuckDNS secret not configured; skipping."
+                    exit 0
+                  fi
+
+                  sa=/var/run/secrets/kubernetes.io/serviceaccount
+                  ip=$(curl -fsS --max-time 15 \
+                    --cacert "${sa}/ca.crt" \
+                    -H "Authorization: Bearer $(cat "${sa}/token")" \
+                    "https://kubernetes.default.svc/api/v1/namespaces/ingress-nginx/services/ingress-nginx-controller" |
+                    grep -o '"ip": *"[0-9.]*"' | head -n1 | grep -o '[0-9][0-9.]*')
+
+                  if [ -z "${ip}" ]; then
+                    echo "ingress-nginx has no LoadBalancer IP yet; skipping."
+                    exit 0
+                  fi
+
+                  result=$(curl -fsS --max-time 30 \
+                    "https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=${ip}")
+                  echo "DuckDNS ${DUCKDNS_DOMAIN}.duckdns.org -> ${ip}: ${result}"
+
+                  # VPN name: empty ip= makes DuckDNS use this request's
+                  # public address.
+                  vpn_result="OK"
+                  if [ -n "${DUCKDNS_VPN_DOMAIN}" ]; then
+                    vpn_result=$(curl -fsS --max-time 30 \
+                      "https://www.duckdns.org/update?domains=${DUCKDNS_VPN_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=")
+                    echo "DuckDNS ${DUCKDNS_VPN_DOMAIN}.duckdns.org -> public IP: ${vpn_result}"
+                  fi
+
+                  [ "${result}" = "OK" ] && [ "${vpn_result}" = "OK" ]
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  memory: 32Mi

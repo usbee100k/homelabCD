@@ -791,8 +791,22 @@ sync_gitops_repo() {
         --exclude "*.sh" \
         --exclude "secrets/" \
         --exclude "cluster-info.yaml" \
+        --exclude "apps/applications/" \
         "${SRC_DIR}/" \
         "${GITOPS_DIR}/"
+
+    # apps/applications holds apps imported from Docker Compose (KubesTUI).
+    # They live only in the GitOps repo, so the copy above leaves them alone;
+    # make sure the folder exists so the "applications" Argo CD app is valid.
+    if [[ ! -f "${GITOPS_DIR}/apps/applications/kustomization.yaml" ]]; then
+        mkdir -p "${GITOPS_DIR}/apps/applications"
+        cat > "${GITOPS_DIR}/apps/applications/kustomization.yaml" <<'KUSTOMIZATION'
+# Apps imported from Docker Compose (KubesTUI). Managed by the importer.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: []
+KUSTOMIZATION
+    fi
 
     #############################################
     # Replace template variables
@@ -803,6 +817,12 @@ sync_gitops_repo() {
     [[ -n "${ACME_EMAIL:-}" ]] || \
         die "ACME_EMAIL missing"
 
+    [[ -n "${METALLB_RANGE:-}" ]] || \
+        die "METALLB_RANGE missing"
+
+    [[ -n "${BASE_DOMAIN:-}" ]] || \
+        die "BASE_DOMAIN missing"
+
     find "${GITOPS_DIR}" \
         -type f \
         \( -name "*.yaml" -o -name "*.yml" \) \
@@ -810,7 +830,20 @@ sync_gitops_repo() {
             -e "s|REPLACE_REPO_URL|${SSH_REPO_URL}|g" \
             -e "s|REPLACE_BRANCH|${GITOPS_BRANCH}|g" \
             -e "s|REPLACE_ACME_EMAIL|${ACME_EMAIL}|g" \
+            -e "s|REPLACE_METALLB_RANGE|${METALLB_RANGE}|g" \
+            -e "s|REPLACE_BASE_DOMAIN|${BASE_DOMAIN}|g" \
+            -e "s|REPLACE_VPN_ENDPOINT|${VPN_ENDPOINT:-}|g" \
+            -e "s|REPLACE_VPN_PORT|${VPN_PORT:-51820}|g" \
+            -e "s|REPLACE_VPN_LB_IP|${VPN_LB_IP:-}|g" \
+            -e "s|REPLACE_VPN_ALLOWED_IPS|${VPN_ALLOWED_IPS:-}|g" \
             {} +
+
+    # The VPN is optional: without it, wg-easy is left out entirely.
+    if [[ "${VPN_ENABLED:-false}" != "true" ]]; then
+        sed -i '/wg-easy\/app.yaml/d' \
+            "${GITOPS_DIR}/apps/infrastructure/kustomization.yaml"
+        log_info "VPN disabled: wg-easy not deployed."
+    fi
 
     #############################################
     # Render ingress hostnames
@@ -1143,4 +1176,48 @@ EOF
     systemctl enable --now argocd-replica-scaler.timer
 
     log_ok "Argo CD replica scaler enabled."
+}
+
+#############################################
+# GITOPS: work on the repo outside a bootstrap
+#############################################
+#
+# gitops_prepare: finds the deploy key from the saved repo URL and brings
+# the local GitOps checkout up to date (GITOPS_DIR, GIT_SSH_COMMAND).
+# gitops_commit_push "message": commits everything and pushes.
+#############################################
+
+gitops_prepare() {
+
+    [[ -n "${GITHUB_REPO:-}" ]] || die "GitHub repository unknown (config/cluster.yaml github.repo)."
+
+    local path="${GITHUB_REPO#*:}"
+    path="${path%.git}"
+    GITHUB_USER="${path%%/*}"
+    GITOPS_REPO="${path##*/}"
+    export GITHUB_USER GITOPS_REPO GITHUB_REPO
+
+    generate_argocd_ssh_key >/dev/null
+    sync_gitops_repo
+}
+
+gitops_commit_push() {
+
+    local message="$1"
+
+    git -C "${GITOPS_DIR}" add -A
+
+    if git -C "${GITOPS_DIR}" diff --cached --quiet; then
+        log_ok "GitOps repository already up-to-date."
+        return 0
+    fi
+
+    git -C "${GITOPS_DIR}" -c user.name="${GIT_AUTHOR_NAME:-Homelab Installer}" \
+        -c user.email="${GIT_AUTHOR_EMAIL:-homelab@localhost}" commit -q -m "${message}"
+
+    GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes -i ${SSH_KEY_PATH}" \
+        git -C "${GITOPS_DIR}" push -q origin "HEAD:${GIT_BRANCH:-main}" ||
+        die "Failed to push the GitOps repository (does the deploy key allow write access?)"
+
+    log_ok "Pushed: ${message}"
 }

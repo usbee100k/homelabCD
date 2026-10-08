@@ -69,7 +69,7 @@ LIBRARIES=(
 
     inventory
     node-labels
-    hardware-labels
+    longhorn-disk
 
     health
 
@@ -114,6 +114,9 @@ join_worker() {
 
 
     log_info "Joining worker node"
+
+
+    select_longhorn_disk
 
 
 
@@ -202,6 +205,8 @@ join_worker() {
 
 
     install_kubernetes
+
+    prepare_longhorn_disk
 
 
     finish_step

@@ -1,0 +1,18 @@
+# The VPN itself, on a fixed MetalLB IP so the router port forward
+# (UDP REPLACE_VPN_PORT -> REPLACE_VPN_LB_IP) never changes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wg-easy-vpn
+  namespace: wg-easy
+  annotations:
+    metallb.io/loadBalancerIPs: "REPLACE_VPN_LB_IP"
+spec:
+  selector:
+    app: wg-easy
+  ports:
+    - name: wireguard
+      port: REPLACE_VPN_PORT
+      targetPort: wireguard
+      protocol: UDP
+  type: LoadBalancer

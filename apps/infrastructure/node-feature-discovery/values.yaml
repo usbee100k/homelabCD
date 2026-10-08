@@ -1,0 +1,11 @@
+# The worker DaemonSet inspects each node's own hardware, so nodes
+# never need admin credentials to be labelled. It must also run on
+# control planes, which may still carry the control-plane taint.
+worker:
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
+master:
+  replicaCount: 1

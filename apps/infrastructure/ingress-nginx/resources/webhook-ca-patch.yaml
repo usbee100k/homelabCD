@@ -51,7 +51,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: patch
-          image: bitnami/kubectl:latest
+          image: alpine/k8s:1.36.5  # kubectl + sh; keep minor in step with the cluster
           command:
             - /bin/sh
             - -ec

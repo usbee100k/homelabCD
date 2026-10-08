@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wg-easy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "40"
+spec:
+  project: homelab
+
+  # WireGuard VPN. Only listed in apps/infrastructure/kustomization.yaml
+  # when vpn.enabled is true in config/cluster.yaml (the GitOps sync removes
+  # it otherwise). Settings come from the vpn: section via REPLACE_VPN_*.
+  sources:
+    - repoURL: REPLACE_REPO_URL
+      targetRevision: REPLACE_BRANCH
+      path: apps/infrastructure/wg-easy/resources
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: wg-easy
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

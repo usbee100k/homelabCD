@@ -5,7 +5,7 @@ metadata:
   namespace: metallb-system
 spec:
   addresses:
-    - 192.168.50.200-192.168.50.220
+    - REPLACE_METALLB_RANGE
   autoAssign: true
 ---
 apiVersion: metallb.io/v1beta1
@@ -16,10 +16,8 @@ metadata:
 spec:
   ipAddressPools:
     - default-pool
+  # Up to 3 Ready nodes carry this label; maintained by
+  # the metallb-node-selector timer (lib/metallb.sh).
   nodeSelectors:
     - matchLabels:
-        kubernetes.io/hostname: k8s-control2
-    - matchLabels:
-        kubernetes.io/hostname: k87-controler
-    - matchLabels:
-        kubernetes.io/hostname: tc-worker
+        homelab.io/metallb-announce: "true"

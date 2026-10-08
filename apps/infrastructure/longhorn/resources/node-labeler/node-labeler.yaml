@@ -32,7 +32,10 @@ metadata:
   name: longhorn-node-labeler
   namespace: longhorn-system
 spec:
-  schedule: "*/5 * * * *"
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
       template:
@@ -41,13 +44,30 @@ spec:
           restartPolicy: Never
           containers:
             - name: labeler
-              image: bitnami/kubectl:latest
+              image: alpine/k8s:1.36.5  # kubectl + sh; keep minor in step with the cluster
               command:
                 - /bin/sh
                 - -c
                 - |
-                  for node in $(kubectl get nodes -o name); do
-                    kubectl label "$node" \
-                      node.longhorn.io/create-default-disk=true \
-                      --overwrite
+                  # Nodes registered with homelab.io/longhorn-disk=dedicated
+                  # (set by the installer's dedicated-disk prompt) store data
+                  # on their own disk with nothing reserved. Every other node
+                  # uses /var/lib/longhorn on the OS disk, where Longhorn
+                  # keeps 30% free for the OS.
+                  #
+                  # Longhorn only reads this while a node has no disks, so it
+                  # never moves storage on a node that already has some.
+                  kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.labels.homelab\.io/longhorn-disk}{"\n"}{end}' |
+                  while read -r node disk; do
+                    [ -n "$node" ] || continue
+                    if [ "$disk" = "dedicated" ]; then
+                      # Annotation first: Longhorn acts as soon as it sees the label.
+                      kubectl annotate node "$node" --overwrite \
+                        node.longhorn.io/default-disks-config='[{"path":"/mnt/longhorn-disk","allowScheduling":true,"storageReserved":0,"tags":["dedicated"]}]'
+                      kubectl label node "$node" --overwrite \
+                        node.longhorn.io/create-default-disk=config
+                    else
+                      kubectl label node "$node" --overwrite \
+                        node.longhorn.io/create-default-disk=true
+                    fi
                   done

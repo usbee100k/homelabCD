@@ -9,6 +9,7 @@ network:
   podSubnet: "10.0.0.0/16"
   serviceSubnet: "10.96.0.0/12"
   dnsDomain: "cluster.local"
+  metallbRange: ""
 
 github:
   repo: ""
@@ -17,6 +18,14 @@ github:
 domains:
   base: ""
   acmeEmail: ""
+
+# WireGuard VPN (wg-easy) for reaching the cluster from outside the LAN.
+vpn:
+  enabled: false
+  endpoint: ""     # public name clients connect to, e.g. myhome-vpn.duckdns.org
+  port: 51820
+  ip: ""           # MetalLB IP for wg-easy (forward UDP port to it on your router)
+  allowedIPs: ""   # node subnet(s) VPN clients can reach, e.g. 192.168.50.0/24
 
 features:
   cilium: true

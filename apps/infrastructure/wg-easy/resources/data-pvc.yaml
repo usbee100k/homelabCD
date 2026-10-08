@@ -1,0 +1,13 @@
+# wg-easy's database: clients, keys and settings.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wg-easy-data
+  namespace: wg-easy
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi
