@@ -115,6 +115,8 @@ join_worker() {
 
     log_info "Joining worker node"
 
+    ask_step_mode
+
 
     select_longhorn_disk
 

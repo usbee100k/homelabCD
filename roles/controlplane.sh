@@ -103,6 +103,8 @@ join_controlplane() {
         exit 1
     fi
 
+    ask_step_mode
+
     #########################################
     # Dedicated Longhorn Disk (optional)
     #########################################

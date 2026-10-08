@@ -317,7 +317,7 @@ render_gitops_ingresses() {
     local hostname
     local target
 
-    while IFS=$'\t' read -r path subdomain; do
+    while IFS=$'\t' read -r name path subdomain; do
 
         [[ -n "${path}" ]] || continue
         [[ -n "${subdomain}" ]] || continue
@@ -330,7 +330,7 @@ render_gitops_ingresses() {
             continue
         fi
 
-        log_info "Rendering ${hostname}"
+        log_info "Rendering ${hostname}  (${name}: ${path})"
 
         sed -i \
             "s|__HOSTNAME__|${hostname}|g" \
@@ -339,7 +339,7 @@ render_gitops_ingresses() {
         count=$((count + 1))
 
     done < <(
-        yq -r '.ingresses[] | [.path, .subdomain] | @tsv' \
+        yq -r '.ingresses[] | [.name, .path, .subdomain] | @tsv' \
             "${INGRESS_CONFIG}"
     )
 

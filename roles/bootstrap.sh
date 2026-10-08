@@ -78,6 +78,8 @@ bootstrap_cluster() {
 
     log_info "Starting Kubernetes cluster bootstrap"
 
+    ask_step_mode
+
     next_step "Installing KubesTUI"
 
     install_kubestui
