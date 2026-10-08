@@ -248,89 +248,123 @@ verify_cluster_dns() {
 #############################################
 # GITOPS REPOSITORY SELECTION
 #############################################
+#
+# ensure_gitops_repo asks for the GitOps repository ONCE per bootstrap and
+# saves it (config/defaults.env and config/cluster.yaml). Every later step
+# calls it and gets the saved answer without asking again. A repository
+# saved by an earlier run is reused; edit config/cluster.yaml (github.repo)
+# to change it.
+#############################################
 
-configure_gitops_repository() {
+ensure_gitops_repo() {
 
-    log_info "Configure GitOps repository"
+    # Known already: this run, or saved by an earlier one.
+    if [[ -z "${GITHUB_USER:-}" || -z "${GITOPS_REPO:-}" ]] && [[ -n "${GITHUB_REPO:-}" ]]; then
+        local path="${GITHUB_REPO#*github.com}"
+        path="${path#[:/]}"
+        path="${path%.git}"
+        GITHUB_USER="${path%%/*}"
+        GITOPS_REPO="${path##*/}"
+    fi
 
-    # IMPORTANT:
-    # These variables must NOT be local.
-    # They are needed by the functions that run afterward.
+    if [[ -n "${GITHUB_USER:-}" && -n "${GITOPS_REPO:-}" ]]; then
+        GITHUB_REPO="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
+        export GITHUB_USER GITOPS_REPO GITHUB_REPO
+        return 0
+    fi
+
+    # Same layout as the deploy key screen: label, then the value
+    # indented underneath (answers are typed on the indented line).
+    echo
+    echo "=========================================================="
+    echo "              GITOPS REPOSITORY FOR THIS CLUSTER"
+    echo "=========================================================="
+    echo
+    echo "Argo CD deploys everything from this GitHub repository."
+    echo "Create it first (empty, private is fine)."
+    echo
+    echo "Example:"
+    echo "  https://github.com/your-username/your-repository"
+    echo "  GitHub username  ->  your-username"
+    echo "  Repository name  ->  your-repository"
+    echo
+
+    local CONFIRM
 
     while true; do
 
-        echo
-        read -rp "GitHub username: " GITHUB_USER
+        echo "GitHub username:"
+        read -rp "  " GITHUB_USER
+        GITHUB_USER="${GITHUB_USER//[[:space:]]/}"
 
-        while [[ -z "${GITHUB_USER}" ]]; do
+        if [[ -z "${GITHUB_USER}" ]]; then
             log_warn "GitHub username cannot be empty."
-            read -rp "GitHub username: " GITHUB_USER
-        done
+            echo
+            continue
+        fi
 
-        read -rp "Repository name: " GITOPS_REPO
+        echo
+        echo "Repository name:"
+        read -rp "  " GITOPS_REPO
+        GITOPS_REPO="${GITOPS_REPO//[[:space:]]/}"
+        GITOPS_REPO="${GITOPS_REPO%.git}"
 
-        while [[ -z "${GITOPS_REPO}" ]]; do
+        if [[ -z "${GITOPS_REPO}" ]]; then
             log_warn "Repository name cannot be empty."
-            read -rp "Repository name: " GITOPS_REPO
-        done
+            echo
+            continue
+        fi
 
         GITHUB_REPO="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
 
         echo
-        echo "GitOps repository:"
-        echo
+        echo "Repository:"
         echo "  ${GITHUB_REPO}"
         echo
+        echo "On GitHub:"
+        echo "  https://github.com/${GITHUB_USER}/${GITOPS_REPO}"
+        echo
+        echo "=========================================================="
+        echo
 
-        read -rp "Use this repository? [Y/n]: " CONFIRM
+        read -rp "Is this correct? [Y/n]: " CONFIRM
         CONFIRM="${CONFIRM:-Y}"
 
         case "${CONFIRM}" in
-
-            Y|y)
-                break
-                ;;
-
-            N|n)
-                echo
-                continue
-                ;;
-
-            *)
-                echo "Please answer Y or N."
-                ;;
-
+            Y|y) break ;;
+            N|n) echo; echo "Enter the repository again:"; echo ;;
+            *) echo "Please answer Y or N."; echo ;;
         esac
     done
 
-    export GITHUB_USER
-    export GITOPS_REPO
-    export GITHUB_REPO
+    BOOTSTRAP_REPO="${GITHUB_REPO}"
+    export GITHUB_USER GITOPS_REPO GITHUB_REPO BOOTSTRAP_REPO
 
-    #############################################
-    # Save selected repository
-    #############################################
+    log_ok "GitHub repository selected: ${GITHUB_REPO}"
 
+    # Save it so later steps (and later runs) don't ask again.
     if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
 
-        sed -i '/^GITHUB_REPO=/d' \
-            "${ROOT_DIR}/config/defaults.env"
+        sed -i '/^GITHUB_REPO=/d; /^BOOTSTRAP_REPO=/d' "${ROOT_DIR}/config/defaults.env"
 
         # Make sure the file ends with a newline before appending.
-        if [[ -s "${ROOT_DIR}/config/defaults.env" ]]; then
-            LAST_BYTE="$(tail -c 1 "${ROOT_DIR}/config/defaults.env" | od -An -t x1 | tr -d ' ')"
-
-            if [[ "${LAST_BYTE}" != "0a" ]]; then
-                printf '\n' >> "${ROOT_DIR}/config/defaults.env"
-            fi
+        if [[ -s "${ROOT_DIR}/config/defaults.env" ]] &&
+            [[ "$(tail -c 1 "${ROOT_DIR}/config/defaults.env" | od -An -t x1 | tr -d '[:space:]')" != "0a" ]]; then
+            printf '\n' >> "${ROOT_DIR}/config/defaults.env"
         fi
 
-        printf 'GITHUB_REPO="%s"\n' \
-            "${GITHUB_REPO}" \
+        printf 'GITHUB_REPO="%s"\nBOOTSTRAP_REPO="%s"\n' "${GITHUB_REPO}" "${BOOTSTRAP_REPO}" \
             >> "${ROOT_DIR}/config/defaults.env"
-
-        log_ok "GITHUB_REPO updated to ${GITHUB_REPO}"
     fi
+
+    if declare -F save_config >/dev/null; then
+        save_config # github.repo in config/cluster.yaml (used by VPN / Compose import)
+    fi
+}
+
+# Kept for compatibility with older callers.
+configure_gitops_repository() {
+    ensure_gitops_repo
 }
 
 
@@ -342,33 +376,7 @@ generate_argocd_ssh_key() {
 
     log_info "Checking Argo CD SSH deploy key"
 
-    #############################################
-    # SAFETY FALLBACK
-    #############################################
-
-    if [[ -z "${GITHUB_USER:-}" || -z "${GITOPS_REPO:-}" ]]; then
-
-        echo
-        echo "=========================================================="
-        echo "              GITHUB REPOSITORY REQUIRED"
-        echo "=========================================================="
-        echo
-
-        read -rp "GitHub username: " GITHUB_USER
-        read -rp "GitHub repository name: " GITOPS_REPO
-
-        while [[ -z "${GITHUB_USER}" || -z "${GITOPS_REPO}" ]]; do
-            log_warn "GitHub username and repository name are required."
-            read -rp "GitHub username: " GITHUB_USER
-            read -rp "GitHub repository name: " GITOPS_REPO
-        done
-
-        GITHUB_REPO="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
-
-        export GITHUB_USER
-        export GITOPS_REPO
-        export GITHUB_REPO
-    fi
+    ensure_gitops_repo
 
     #############################################
     # Repo-specific key
@@ -417,13 +425,28 @@ generate_argocd_ssh_key() {
     fi
 
     #############################################
+    # Already added to GitHub? Then don't ask again.
+    #############################################
+
+    if GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes -o ConnectTimeout=10 -i ${SSH_KEY_PATH}" \
+        git ls-remote "${GITHUB_REPO}" HEAD >/dev/null 2>&1; then
+        log_ok "Deploy key already has access to ${GITHUB_REPO}."
+        return 0
+    fi
+
+    #############################################
     # Show deploy key
     #############################################
 
+    # Same layout as the repository screen: label, then the value
+    # indented underneath.
     echo
     echo "=========================================================="
-    echo "             ADD THIS DEPLOY KEY TO GITHUB"
+    echo "              ADD THIS DEPLOY KEY TO GITHUB"
     echo "=========================================================="
+    echo
+    echo "Argo CD uses this key to read and update the repository."
+    echo "Add it once; KubesTUI can copy it for you (Ctrl+K)."
     echo
     echo "Repository:"
     echo "  ${GITHUB_REPO}"
@@ -431,12 +454,14 @@ generate_argocd_ssh_key() {
     echo "Add deploy key here:"
     echo "  https://github.com/${GITHUB_USER}/${GITOPS_REPO}/settings/keys"
     echo
+    echo "Title:"
+    echo "  argocd-$(hostname -s)"
+    echo
     echo "Enable:"
     echo "  ✓ Allow write access"
     echo
     echo "Public key:"
-    echo
-    cat "${SSH_KEY_PATH}.pub"
+    echo "  $(cat "${SSH_KEY_PATH}.pub")"
     echo
     echo "=========================================================="
     echo
@@ -906,115 +931,13 @@ bootstrap_gitops() {
 
     log_info "Bootstrapping GitOps"
 
-    #############################################
-    # ASK USER FOR GITHUB INFORMATION FIRST
-    #############################################
-
-    echo
-    echo "=========================================================="
-    echo "              GITOPS REPOSITORY CONFIGURATION"
-    echo "=========================================================="
-    echo
-
-    while true; do
-
-        read -rp "GitHub username: " GITHUB_USER
-
-        if [[ -z "${GITHUB_USER}" ]]; then
-            log_warn "GitHub username cannot be empty."
-            continue
-        fi
-
-        read -rp "GitHub repository name: " GITOPS_REPO
-
-        if [[ -z "${GITOPS_REPO}" ]]; then
-            log_warn "GitHub repository name cannot be empty."
-            continue
-        fi
-
-        GITHUB_REPO="git@github.com:${GITHUB_USER}/${GITOPS_REPO}.git"
-
-        echo
-        echo "Using GitHub repository:"
-        echo
-        echo "  ${GITHUB_REPO}"
-        echo
-
-        read -rp "Is this correct? [Y/n]: " CONFIRM
-        CONFIRM="${CONFIRM:-Y}"
-
-        case "${CONFIRM}" in
-
-            Y|y)
-                break
-                ;;
-
-            N|n)
-                echo
-                echo "Please enter the repository information again."
-                echo
-                ;;
-
-            *)
-                echo "Please answer Y or N."
-                ;;
-
-        esac
-    done
-
-    #############################################
-    # SET REPOSITORY VARIABLES
-    #############################################
+    # Asked once earlier in the bootstrap; reused here.
+    ensure_gitops_repo
 
     BOOTSTRAP_REPO="${GITHUB_REPO}"
-
-    export GITHUB_USER
-    export GITOPS_REPO
-    export GITHUB_REPO
     export BOOTSTRAP_REPO
 
-    log_ok "GitHub repository selected:"
-    log_ok "${GITHUB_REPO}"
-
-    #############################################
-    # SAVE REPOSITORY
-    #############################################
-
-    if [[ -f "${ROOT_DIR}/config/defaults.env" ]]; then
-
-        # Remove old repository values.
-        sed -i '/^GITHUB_REPO=/d' \
-            "${ROOT_DIR}/config/defaults.env"
-
-        sed -i '/^BOOTSTRAP_REPO=/d' \
-            "${ROOT_DIR}/config/defaults.env"
-
-        # Make absolutely sure the file ends with a newline.
-        if [[ -s "${ROOT_DIR}/config/defaults.env" ]]; then
-
-            LAST_BYTE="$(
-                tail -c 1 "${ROOT_DIR}/config/defaults.env" |
-                    od -An -t x1 |
-                    tr -d '[:space:]'
-            )"
-
-            if [[ "${LAST_BYTE}" != "0a" ]]; then
-                printf '\n' >> "${ROOT_DIR}/config/defaults.env"
-            fi
-        fi
-
-        # Save the selected GitHub repository.
-        printf 'GITHUB_REPO="%s"\n' \
-            "${GITHUB_REPO}" \
-            >> "${ROOT_DIR}/config/defaults.env"
-
-        # Bootstrap repository is the same repository selected by the user.
-        printf 'BOOTSTRAP_REPO="%s"\n' \
-            "${BOOTSTRAP_REPO}" \
-            >> "${ROOT_DIR}/config/defaults.env"
-
-        log_ok "GitHub repository saved to config/defaults.env"
-    fi
+    log_ok "GitHub repository: ${GITHUB_REPO}"
 
     #############################################
     # GENERATE DEPLOY KEY
@@ -1189,15 +1112,9 @@ EOF
 
 gitops_prepare() {
 
-    [[ -n "${GITHUB_REPO:-}" ]] || die "GitHub repository unknown (config/cluster.yaml github.repo)."
+    ensure_gitops_repo
 
-    local path="${GITHUB_REPO#*:}"
-    path="${path%.git}"
-    GITHUB_USER="${path%%/*}"
-    GITOPS_REPO="${path##*/}"
-    export GITHUB_USER GITOPS_REPO GITHUB_REPO
-
-    generate_argocd_ssh_key >/dev/null
+    generate_argocd_ssh_key >/dev/null </dev/null
     sync_gitops_repo
 }
 

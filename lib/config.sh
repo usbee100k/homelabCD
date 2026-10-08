@@ -23,6 +23,7 @@ load_config() {
 
     SERVICE_SUBNET=$(yq '.network.serviceSubnet' "${CONFIG_FILE}")
 
+    local saved_repo="${GITHUB_REPO:-}" # from config/defaults.env, if any
     GITHUB_REPO=$(yq '.github.repo' "${CONFIG_FILE}")
 
     BASE_DOMAIN=$(yq '.domains.base' "${CONFIG_FILE}")
@@ -38,8 +39,8 @@ load_config() {
     VPN_ALLOWED_IPS=$(yq '.vpn.allowedIPs // ""' "${CONFIG_FILE}")
 
 
-    if [[ "${GITHUB_REPO}" == "null" ]]; then
-        GITHUB_REPO=""
+    if [[ "${GITHUB_REPO}" == "null" || -z "${GITHUB_REPO}" ]]; then
+        GITHUB_REPO="${saved_repo}"
     fi
 
 
