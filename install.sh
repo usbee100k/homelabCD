@@ -21,6 +21,24 @@ readonly INSTALLER_MODE="${1:-}"
 readonly INSTALLER_OP="${2:-}"
 
 
+#############################################
+# kbtui: straight into KubesTUI
+#############################################
+#
+# The kbtui command passes --tui. The startup checks below still run,
+# but their output is only shown if one of them fails. (The first run,
+# before KubesTUI is built, shows everything.)
+#############################################
+
+STARTUP_LOG=""
+
+if [[ "${INSTALLER_MODE}" == "--tui" && -x "${ROOT_DIR}/bin/kubestui" ]]; then
+    STARTUP_LOG="$(mktemp)"
+    exec 3>&1 4>&2 >"${STARTUP_LOG}" 2>&1
+    trap 'exec 1>&3 2>&4; cat "${STARTUP_LOG}"; rm -f "${STARTUP_LOG}"' EXIT
+fi
+
+
 
 #############################################
 # Helpers
@@ -375,6 +393,9 @@ if [[ "${INSTALLER_MODE}" == "--run" ]]; then
         compose-remove)
             compose_remove
             ;;
+        update)
+            update_homelabcd || exit 1
+            ;;
         health)
             # Report failures through the exit code, not the ERR trap.
             cluster_health || exit 1
@@ -390,6 +411,13 @@ if [[ "${INSTALLER_MODE}" == "--run" ]]; then
 fi
 
 install_kubestui || log_warn "KubesTUI install failed; falling back to text menu."
+
+# Startup succeeded: drop its hidden output and give KubesTUI the terminal.
+if [[ -n "${STARTUP_LOG}" ]]; then
+    exec 1>&3 2>&4 3>&- 4>&-
+    trap - EXIT
+    rm -f "${STARTUP_LOG}"
+fi
 
 export HOMELABCD_ROOT="${ROOT_DIR}"
 export HOMELABCD_INSTALL="${ROOT_DIR}/install.sh"

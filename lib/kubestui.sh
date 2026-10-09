@@ -90,7 +90,9 @@ install_kubestui() {
     (
         cd "${src}"
         go mod tidy
-        CGO_ENABLED=0 go build -o "${dest}" .
+        # Build beside it, then swap: a running KubesTUI keeps working.
+        CGO_ENABLED=0 go build -o "${dest}.new" .
+        mv -f "${dest}.new" "${dest}"
     )
 
     chmod +x "${dest}"
@@ -164,6 +166,10 @@ install_kbtui_command() {
 
     cat >"${target}" <<EOF
 #!/usr/bin/env bash
+# No arguments: open KubesTUI straight away (install.sh hides the startup checks).
+if (( \$# == 0 )); then
+    set -- --tui
+fi
 if (( EUID != 0 )); then
     exec sudo bash "${ROOT_DIR}/install.sh" "\$@"
 fi
@@ -173,4 +179,60 @@ EOF
     chmod 755 "${target}"
 
     log_ok "KubesTUI launcher installed: kbtui"
+}
+
+
+#############################################
+# Update homelabCD and KubesTUI
+#############################################
+#
+# Pulls the latest homelabCD into ROOT_DIR and rebuilds KubesTUI from its
+# repository. --autostash keeps the answers the installer saved in
+# config/. A running KubesTUI keeps the old version until it is reopened.
+#############################################
+
+update_homelabcd() {
+
+    log_info "Updating homelabCD in ${ROOT_DIR}"
+
+    if [[ ! -d "${ROOT_DIR}/.git" ]]; then
+
+        log_warn "${ROOT_DIR} is not a git clone; skipping the homelabCD update."
+        log_warn "Clone homelabCD with git to update it from here."
+
+    else
+
+        # Run git as the owner of the clone: as root, git refuses it
+        # ("dubious ownership") and would leave root-owned files behind.
+        local owner
+        local as=()
+
+        owner="$(stat -c %U "${ROOT_DIR}")"
+        [[ "${owner}" == "$(id -un)" ]] || as=(runuser -u "${owner}" --)
+
+        local before after
+
+        before="$("${as[@]}" git -C "${ROOT_DIR}" rev-parse --short HEAD)"
+
+        if ! "${as[@]}" git -C "${ROOT_DIR}" pull --ff-only --autostash; then
+            log_error "Could not update homelabCD (see the git message above)."
+            return 1
+        fi
+
+        after="$("${as[@]}" git -C "${ROOT_DIR}" rev-parse --short HEAD)"
+
+        if [[ "${before}" == "${after}" ]]; then
+            log_ok "homelabCD is already up to date (${after})."
+        else
+            log_ok "homelabCD updated: ${before} -> ${after}"
+            "${as[@]}" git -C "${ROOT_DIR}" log --oneline "${before}..${after}"
+        fi
+    fi
+
+    echo
+
+    KUBESTUI_FORCE=1 install_kubestui || return 1
+
+    echo
+    log_ok "Update complete. Quit KubesTUI (Q) and run kbtui to use the new version."
 }
