@@ -8,7 +8,8 @@
 
 remote_join_ssh_opts() {
     local port="${JOIN_SSH_PORT:-22}"
-    echo -n "-p ${port} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
+    # ServerAlive*: a node that goes away ends the session within ~30s.
+    echo -n "-p ${port} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
 }
 
 

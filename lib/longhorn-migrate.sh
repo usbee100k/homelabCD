@@ -208,7 +208,8 @@ lh_prepare_disk_on_node() {
     port="${JOIN_SSH_PORT:-22}"
     dest="${user}@${ip}"
 
-    local -a ssh_opts=(-p "${port}" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
+    local -a ssh_opts=(-p "${port}" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15
+        -o ServerAliveInterval=10 -o ServerAliveCountMax=3)
 
     log_info "Connecting to ${dest}..."
 
