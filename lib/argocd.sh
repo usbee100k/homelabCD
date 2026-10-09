@@ -466,7 +466,24 @@ generate_argocd_ssh_key() {
     echo "=========================================================="
     echo
 
-    read -rp "Press ENTER after adding the deploy key to GitHub..."
+    # Ctrl+C here is almost always an attempt to copy the key, so one
+    # press doesn't end the bootstrap; a second within 3 seconds does.
+    local last_int=-10
+    trap 'echo
+        if (( SECONDS - last_int <= 3 )); then trap - INT; kill -INT $$; fi
+        last_int=${SECONDS}
+        log_warn "Ctrl+C does not copy here: select the key with the mouse, or press Ctrl+K in KubesTUI."
+        log_warn "Press Ctrl+C again within 3 seconds to cancel the bootstrap."' INT
+
+    # Retry only when the read was interrupted (status > 128), not on EOF.
+    local rc
+    while true; do
+        rc=0
+        read -rp "Press ENTER after adding the deploy key to GitHub..." || rc=$?
+        (( rc > 128 )) || break
+    done
+
+    trap - INT
 }
 
 #############################################
