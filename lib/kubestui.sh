@@ -274,6 +274,13 @@ update_homelabcd() {
         owner="$(stat -c %U "${ROOT_DIR}")"
         [[ "${owner}" == "$(id -un)" ]] || as=(runuser -u "${owner}" --)
 
+        # The installer runs as root, and files it rewrites (yq -i on
+        # config/cluster.yaml) end up owned by root, which git as the
+        # owner can't update. Hand everything back first.
+        if (( EUID == 0 )) && [[ "${owner}" != root ]]; then
+            chown -R "${owner}:" "${ROOT_DIR}"
+        fi
+
         local before after
 
         before="$("${as[@]}" git -C "${ROOT_DIR}" rev-parse --short HEAD)"
