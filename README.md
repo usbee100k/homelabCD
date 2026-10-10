@@ -17,7 +17,6 @@ and launches for you (there is also a plain text menu as a fallback).
 ## What gets installed
 
 | Component | What it does in the cluster |
-|---|---|
 | **containerd** | Container runtime |
 | **kubeadm / kubelet / kubectl** | Kubernetes (version from `config/versions.env`) |
 | **kube-vip** | A virtual IP (VIP) for the API server, so the cluster survives losing a control plane |

@@ -128,20 +128,35 @@ build_kubestui_dist() {
     mkdir -p "${out}"
     rm -f "${out}"/kubestui-* "${out}/SHA256SUMS"
 
-    for target in windows/amd64 windows/arm64 darwin/amd64 darwin/arm64 linux/amd64 linux/arm64; do
+    local targets=(windows/amd64 windows/arm64 darwin/amd64 darwin/arm64 linux/amd64 linux/arm64)
+    local n=0 started
+
+    log_info "Building ${#targets[@]} binaries. Each one compiles everything for its"
+    log_info "platform, so this can take several minutes per binary on a small node."
+
+    for target in "${targets[@]}"; do
         os="${target%/*}"
         arch="${target#*/}"
         ext=""
         [[ "${os}" == windows ]] && ext=".exe"
+        n=$((n + 1))
+        started="${SECONDS}"
 
-        log_info "Building kubestui-${os}-${arch}${ext}"
+        log_info "[${n}/${#targets[@]}] Building kubestui-${os}-${arch}${ext}"
 
+        # -v lists each package as it compiles, so a long build visibly moves.
         (
             cd "${src}"
-            CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" go build -trimpath \
+            CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" go build -v -trimpath \
                 -ldflags "-s -w -X main.version=${version}" \
                 -o "${out}/kubestui-${os}-${arch}${ext}" .
-        )
+        ) || {
+            log_error "Build of kubestui-${os}-${arch}${ext} failed."
+            log_error "\"signal: killed\" means the node ran out of memory (see: dmesg | grep -i oom)."
+            return 1
+        }
+
+        log_ok "[${n}/${#targets[@]}] kubestui-${os}-${arch}${ext} ($((SECONDS - started))s)"
     done
 
     (cd "${out}" && sha256sum kubestui-* > SHA256SUMS)
