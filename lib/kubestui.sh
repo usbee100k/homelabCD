@@ -198,6 +198,55 @@ EOF
 
 
 #############################################
+# Keep local settings after an update
+#############################################
+#
+# config/ is tracked but the installer saves your answers there. If an
+# update changed the same lines, `git pull --autostash` reports success
+# but leaves conflict markers in the file, which breaks every later run.
+# For config/ files your saved copy (in the autostash) wins; any other
+# conflict stops the update with instructions.
+#############################################
+
+homelabcd_keep_local_config() {
+
+    local as=("$@")
+    local g=("${as[@]}" git -C "${ROOT_DIR}")
+    local files f other=()
+
+    files="$("${g[@]}" diff --name-only --diff-filter=U)"
+    [[ -n "${files}" ]] || return 0
+
+    if ! "${g[@]}" stash list -1 | grep -q autostash; then
+        log_error "These files have merge conflicts after the update:"
+        sed 's/^/  /' <<<"${files}"
+        log_error "Resolve them in ${ROOT_DIR}, then run the update again."
+        return 1
+    fi
+
+    while read -r f; do
+        if [[ "${f}" == config/* ]]; then
+            "${g[@]}" show "stash@{0}:${f}" | "${as[@]}" tee "${ROOT_DIR}/${f}" >/dev/null
+            "${g[@]}" reset -q -- "${f}"
+            log_warn "Kept your saved ${f} (the update also changed it)."
+        else
+            other+=("${f}")
+        fi
+    done <<<"${files}"
+
+    if (( ${#other[@]} > 0 )); then
+        log_error "These files have merge conflicts after the update:"
+        printf '  %s\n' "${other[@]}"
+        log_error "Your local changes are in the stash (git stash list)."
+        log_error "Resolve them in ${ROOT_DIR}, then run: git stash drop"
+        return 1
+    fi
+
+    "${g[@]}" stash drop -q
+}
+
+
+#############################################
 # Update homelabCD and KubesTUI
 #############################################
 #
@@ -233,6 +282,8 @@ update_homelabcd() {
             log_error "Could not update homelabCD (see the git message above)."
             return 1
         fi
+
+        homelabcd_keep_local_config "${as[@]}" || return 1
 
         after="$("${as[@]}" git -C "${ROOT_DIR}" rev-parse --short HEAD)"
 
