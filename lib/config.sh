@@ -119,3 +119,50 @@ show_cluster_config() {
 
     echo
 }
+
+
+#############################################
+# RENAME THE CLUSTER
+#############################################
+#
+# The cluster name lives only in config/cluster.yaml (cluster.name).
+# KubesTUI, the text menu and the cluster report all read it from there,
+# so renaming is this one edit. Kubernetes itself keeps the name kubeadm
+# was given when the cluster was created; nothing in the cluster depends
+# on it.
+#############################################
+
+rename_cluster() {
+
+    local current new
+
+    current="$(yq '.cluster.name // ""' "${CONFIG_FILE}")"
+
+    echo "Current cluster name: ${current:-<none>}"
+    echo "Lowercase letters, digits and dashes (e.g. homelab, teslab, lab-2)."
+    echo
+
+    read -r -p "New cluster name (blank = keep): " new
+
+    new="${new,,}"
+    new="${new//[[:space:]]/}"
+
+    if [[ -z "${new}" || "${new}" == "${current}" ]]; then
+        log_ok "Cluster name unchanged: ${current}"
+        return 0
+    fi
+
+    if [[ ! "${new}" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+        log_error "\"${new}\" isn't a valid name: use lowercase letters, digits and dashes,"
+        log_error "starting and ending with a letter or digit (at most 63 characters)."
+        return 1
+    fi
+
+    NEW_NAME="${new}" yq -i '.cluster.name = strenv(NEW_NAME)' "${CONFIG_FILE}"
+
+    CLUSTER_NAME="${new}"
+    export CLUSTER_NAME
+
+    log_ok "Cluster renamed: ${current} -> ${new}"
+    echo "  Saved in ${CONFIG_FILE}. KubesTUI shows the new name within a few seconds."
+}

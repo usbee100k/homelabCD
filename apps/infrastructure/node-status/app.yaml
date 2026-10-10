@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: node-status
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: homelab
+
+  # Writes the cluster's node list to /var/lib/kubestui/nodes.json on every
+  # node, so KubesTUI's activity lights work on workers too (they have no
+  # credentials that may list nodes).
+  sources:
+    - repoURL: REPLACE_REPO_URL
+      targetRevision: REPLACE_BRANCH
+      path: apps/infrastructure/node-status/resources
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kubestui
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

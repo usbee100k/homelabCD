@@ -17,6 +17,7 @@ and launches for you (there is also a plain text menu as a fallback).
 ## What gets installed
 
 | Component | What it does in the cluster |
+|---|---|
 | **containerd** | Container runtime |
 | **kubeadm / kubelet / kubectl** | Kubernetes (version from `config/versions.env`) |
 | **kube-vip** | A virtual IP (VIP) for the API server, so the cluster survives losing a control plane |
@@ -29,6 +30,7 @@ and launches for you (there is also a plain text menu as a fallback).
 | **Longhorn** | Replicated block storage across nodes, optionally on a dedicated disk |
 | **metrics-server** | `kubectl top` and resource metrics |
 | **node-feature-discovery** | Labels nodes with their hardware features |
+| **node-status** | Keeps the node list on every node, so KubesTUI's activity lights also work on workers |
 | **DuckDNS** (optional) | Keeps a `*.duckdns.org` domain pointing at your home IP |
 | **wg-easy** (optional) | WireGuard VPN with a web UI, for reaching the cluster from outside your LAN |
 | **Rancher**, **qBittorrent** | Included as example apps |
@@ -207,6 +209,7 @@ All of these are in the KubesTUI menu, and can also be run directly with
 |---|---|---|
 | Cluster Health Check | `health` | Reports on nodes, control plane, etcd, Cilium, MetalLB, ingress, DNS, Argo CD apps, pods, storage and certificates |
 | Cluster Configuration | `config` | Shows `config/cluster.yaml` and the live kubeadm configuration |
+| Rename Cluster | `rename` | Changes the cluster name shown in KubesTUI and reports (`cluster.name` in `config/cluster.yaml`). Doesn't touch the running cluster |
 | Repair Existing Node | `repair` | Restarts containerd and kubelet, shows recent errors and the node status |
 | Move Node to Dedicated Longhorn Disk | `longhorn-disk` | Formats a spare disk, adds it to Longhorn, moves that node's replicas off the OS disk, then removes the old disk. No downtime; asks before erasing anything; re-running resumes an interrupted move |
 | Import Docker Compose App | `compose-import` | Turns a `docker-compose.yml` into an app in your GitOps repository (see below) |
@@ -272,14 +275,23 @@ After an operation finishes: **R** runs it again, **S** saves the log to
 
 | File | Contents |
 |---|---|
-| `config/defaults.env` | Cluster name, GitOps repository, bootstrap repository, branch, Kubernetes version (created from `defaults.example.env`) |
-| `config/cluster.yaml` | Network (VIP, pod/service subnets, MetalLB range), GitHub repository, domains, VPN |
+| `config/defaults.env` | GitOps repository, bootstrap repository, branch, Kubernetes version (created from `defaults.example.env`) |
+| `config/cluster.yaml` | Cluster name, network (VIP, pod/service subnets, MetalLB range), GitHub repository, domains, VPN |
 | `config/versions.env` | Versions of Kubernetes, containerd, Cilium, kube-vip, Helm and Longhorn |
 | `config/ingress.yaml` | Which manifests get a `<subdomain>.<domain>` hostname; add entries here for new web UIs |
 | `config/bootstrap.env`, `config/encryption.env` | Bootstrap repository and encryption settings (written by the installer) |
 
 Set `network.vip` in `config/cluster.yaml` to a free IP on your LAN before
 bootstrapping. To use a different GitOps repository, change `github.repo`.
+
+The cluster name is only stored in `cluster.name` in `config/cluster.yaml`.
+Change it there or with **Rename Cluster**; KubesTUI picks up the new name
+within a few seconds. Kubernetes keeps the name it was created with
+internally, and nothing depends on it. Names starting with `homelab` in the
+GitOps templates (the `homelab` Argo CD project, the `homelab-ca` certificate
+issuer, `homelab.io/*` node labels) are fixed identifiers, not the cluster
+name: renaming them on a running cluster would detach apps, reissue
+certificates and drop node labels.
 
 ---
 

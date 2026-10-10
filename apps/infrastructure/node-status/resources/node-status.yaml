@@ -1,0 +1,81 @@
+# Read-only node list for KubesTUI on every node.
+#
+# A worker's own credentials (kubelet.conf) may only read its own Node, so
+# KubesTUI can't list the cluster from there. This DaemonSet can: every 5s
+# it writes `kubectl get nodes -o json` to /var/lib/kubestui/nodes.json on
+# its node (root-only). KubesTUI reads that file when kubectl isn't set up,
+# and treats it as stale (cluster unreachable) once it stops updating.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: node-status
+  namespace: kubestui
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubestui-node-status
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubestui-node-status
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubestui-node-status
+subjects:
+  - kind: ServiceAccount
+    name: node-status
+    namespace: kubestui
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-status
+  namespace: kubestui
+spec:
+  selector:
+    matchLabels:
+      app: node-status
+  template:
+    metadata:
+      labels:
+        app: node-status
+    spec:
+      serviceAccountName: node-status
+      # Every node, control planes and tainted nodes included.
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: node-status
+          image: alpine/k8s:1.36.5  # kubectl + sh; keep minor in step with the cluster
+          command:
+            - /bin/sh
+            - -c
+            - |
+              umask 077
+              while true; do
+                if kubectl get nodes -o json > /out/nodes.json.tmp; then
+                  mv -f /out/nodes.json.tmp /out/nodes.json
+                fi
+                sleep 5
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: out
+              mountPath: /out
+      volumes:
+        - name: out
+          hostPath:
+            path: /var/lib/kubestui
+            type: DirectoryOrCreate

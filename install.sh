@@ -311,7 +311,6 @@ if [[ ! -f "${ROOT_DIR}/config/defaults.env" ]]; then
 cat > "${ROOT_DIR}/config/defaults.env" <<'EOF'
 #!/usr/bin/env bash
 
-CLUSTER_NAME="homelab"
 GITHUB_REPO=""
 BOOTSTRAP_REPO=""
 GIT_BRANCH="main"
@@ -407,6 +406,9 @@ if [[ "${INSTALLER_MODE}" == "--run" ]]; then
         config)
             show_cluster_config
             ;;
+        rename)
+            rename_cluster || exit 1
+            ;;
         *)
             die "Unknown installer operation: ${INSTALLER_OP:-<empty>}"
             ;;
@@ -425,7 +427,7 @@ fi
 
 export HOMELABCD_ROOT="${ROOT_DIR}"
 export HOMELABCD_INSTALL="${ROOT_DIR}/install.sh"
-export CLUSTER_NAME="${CLUSTER_NAME:-homelab}"
+export CLUSTER_NAME
 export KUBERNETES_VERSION="${KUBERNETES_VERSION:-unknown}"
 export VIP_ADDRESS="${VIP_ADDRESS:-unknown}"
 export CONTAINER_RUNTIME CNI ROOT_DIR

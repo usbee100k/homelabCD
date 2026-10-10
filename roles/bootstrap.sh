@@ -19,6 +19,11 @@ fi
 
 source "${ROOT_DIR}/config/defaults.env" 2>/dev/null || true
 
+# config/cluster.yaml wins over defaults.env (cluster name, VIP, subnets...).
+if declare -F load_config >/dev/null; then
+    load_config
+fi
+
 export NODE_ROLE="${NODE_ROLE:-controlplane}"
 export KUBERNETES_VERSION="${KUBERNETES_VERSION:-unknown}"
 

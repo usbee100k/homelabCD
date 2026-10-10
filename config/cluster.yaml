@@ -1,5 +1,5 @@
 cluster:
-  name: homelab
+  name: homelab   # shown in KubesTUI; change it any time (or use "Rename Cluster")
 
 kubernetes:
   version: "1.36.2"
