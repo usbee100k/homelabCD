@@ -275,6 +275,10 @@ setup_vpn() {
         export DUCKDNS_DOMAIN
     fi
 
+    # Bring the GitOps checkout up to date first, while the saved
+    # settings are still the old ones (see lib/gitops.sh).
+    gitops_prepare
+
     configure_vpn --force
 
     if [[ "${VPN_ENABLED}" != "true" && "${was_enabled}" != "true" ]]; then
@@ -283,9 +287,12 @@ setup_vpn() {
 
     [[ "${VPN_ENABLED}" == "true" ]] && install_vpn_secret
 
-    # Push through GitOps, like bootstrap does: adds wg-easy, or (when
-    # turned off) leaves it out so Argo CD removes it.
-    gitops_prepare
+    # Push through GitOps: adds wg-easy, or (when turned off) leaves it
+    # out so Argo CD removes it. Only the VPN's own files are updated;
+    # the rest of the repository is left as it is.
+    gitops_apply_templates "Configure the VPN" \
+        apps/infrastructure/wg-easy \
+        apps/infrastructure/kustomization.yaml
 
     if [[ "${VPN_ENABLED}" != "true" ]]; then
         log_ok "VPN turned off; Argo CD removes wg-easy within a few minutes."

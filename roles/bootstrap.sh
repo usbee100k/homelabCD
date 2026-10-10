@@ -41,6 +41,7 @@ LIBRARIES=(
     helm
     cilium
     argocd
+    gitops
     domains
     vpn
     metallb

@@ -213,6 +213,7 @@ LIBRARIES=(
     helm
     cilium
     argocd
+    gitops
     health
     report
     repair
@@ -395,6 +396,9 @@ if [[ "${INSTALLER_MODE}" == "--run" ]]; then
             ;;
         update)
             update_homelabcd || exit 1
+            ;;
+        gitops-update)
+            update_gitops_templates || exit 1
             ;;
         health)
             # Report failures through the exit code, not the ERR trap.

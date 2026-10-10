@@ -235,4 +235,5 @@ update_homelabcd() {
 
     echo
     log_ok "Update complete. Quit KubesTUI (Q) and run kbtui to use the new version."
+    echo "  New templates for your GitOps repo: run \"Update GitOps Templates\" afterwards."
 }

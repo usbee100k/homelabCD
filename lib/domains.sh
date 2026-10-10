@@ -293,14 +293,18 @@ configure_metallb_range() {
 # RENDER GITOPS INGRESSES
 #############################################
 
+# render_gitops_ingresses [dir]: fills in the hostnames in dir
+# (default: the GitOps checkout).
 render_gitops_ingresses() {
+
+    local dir="${1:-${GITOPS_DIR:-}}"
 
     log_info "Rendering GitOps ingress hostnames..."
 
     [[ -n "${BASE_DOMAIN:-}" ]] || \
         die "BASE_DOMAIN missing"
 
-    [[ -n "${GITOPS_DIR:-}" ]] || \
+    [[ -n "${dir}" ]] || \
         die "GITOPS_DIR missing"
 
     local INGRESS_CONFIG
@@ -323,7 +327,7 @@ render_gitops_ingresses() {
         [[ -n "${subdomain}" ]] || continue
 
         hostname="${subdomain}.${BASE_DOMAIN}"
-        target="${GITOPS_DIR}/${path}"
+        target="${dir}/${path}"
 
         if [[ ! -f "${target}" ]]; then
             log_warn "Ingress file not found: ${target}"

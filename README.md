@@ -99,8 +99,9 @@ After that it runs:
     - creates an SSH **deploy key** and shows it so you can add it to GitHub
       (enable *Allow write access*; Ctrl+K in KubesTUI copies the key)
     - checks access to the repository
-    - copies the `apps/` and `bootstrap/` manifests into the repository with your domain filled in
-    - pushes them, and points Argo CD at the repository
+    - clones the repository to `~/<repository>` on this node
+    - fills in homelabCD's `apps/` and `bootstrap/` templates with your settings, pushes them,
+      and points Argo CD at the repository
 11. **Join credentials:** creates join commands for control planes and workers
 12. **Encrypted bootstrap package:** encrypts the join credentials and cluster
     information with **age** and uploads them to a private bootstrap repository,
@@ -110,6 +111,69 @@ After that it runs:
 
 From then on, **Argo CD keeps the cluster in sync with your GitOps
 repository.** To change what runs in the cluster, commit to that repository.
+
+---
+
+## Your GitOps repository
+
+After the first bootstrap the repository is **yours**. Edit any file and push,
+and Argo CD applies it. homelabCD never overwrites your edits.
+
+**Where you can edit:**
+
+- **On GitHub:** edit files in the web UI, or clone the repository anywhere.
+- **On the bootstrap node:** the clone in `~/<repository>` belongs to you and is
+  set up to push with the deploy key:
+  ```bash
+  cd ~/<repository>
+  git pull                     # get edits made elsewhere first
+  nano apps/infrastructure/longhorn/values.yaml
+  git commit -am "More Longhorn replicas" && git push
+  ```
+
+**What homelabCD still changes, and only these:**
+
+| Operation | Files it writes |
+|---|---|
+| Set Up VPN | `apps/infrastructure/wg-easy/` and its line in `apps/infrastructure/kustomization.yaml` |
+| Import / Remove Compose App | `apps/applications/<name>/` |
+| Update GitOps Templates | Only what changed in homelabCD's templates (see below) |
+
+Before any of these, homelabCD pulls your latest commits. It stops, without
+changing anything, if the node's clone has uncommitted changes or commits that
+clash with GitHub, and tells you how to fix it.
+
+### Getting template updates
+
+When a newer homelabCD improves its templates (after **Update homelabCD and
+KubesTUI**), run **Update GitOps Templates** (`--run gitops-update`) to bring
+the changes into your repository:
+
+- The branch `homelabcd-templates` in your repository holds exactly what homelabCD
+  generated. The update regenerates the templates and **git merges** the
+  differences into your branch, so only homelabCD's own changes come in.
+- **Your settings are carried over.** Templates are always filled in from the
+  saved configuration, not from the old files: domain, ACME email and MetalLB IP
+  pool from `config/cluster.yaml`, subdomains from `config/ingress.yaml`, and the
+  VPN settings. A new template gets the same values as the old one. A value you
+  changed directly in your repository, such as the IP pool, is kept like any other
+  edit. If a saved value is missing, or a template would be left with an unfilled
+  placeholder, the update stops before changing anything.
+- **Where you and homelabCD changed different lines** (even in the same file),
+  both changes are kept.
+- **Where you both changed the same line**, nothing is changed. The update lists
+  the files, and you combine them on the node:
+  ```bash
+  cd ~/<repository>
+  git pull && git merge homelabcd-templates
+  # edit the listed files: keep what you want between the <<<<<<< and >>>>>>> marks
+  git add -A && git commit && git push
+  ```
+
+Repositories set up by an older homelabCD have no `homelabcd-templates` branch.
+The first GitOps operation after upgrading creates it from the current
+templates without changing any of your files. Template changes made after that
+point are what later updates bring in.
 
 ---
 
@@ -152,6 +216,7 @@ All of these are in the KubesTUI menu, and can also be run directly with
 | VPN Status | `vpn-status` | Shows the VPN server, public endpoint, router forward target, connected clients and handshakes |
 | Generate Join Commands | `join-commands` | Prints fresh join commands |
 | Update homelabCD and KubesTUI | `update` | Pulls the latest homelabCD from GitHub (your saved settings in `config/` are kept) and rebuilds KubesTUI. Doesn't change the cluster. Reopen KubesTUI (`kbtui`) afterwards to use the new version |
+| Update GitOps Templates | `gitops-update` | Merges this homelabCD version's templates into your GitOps repository, keeping your edits and settings (see [Getting template updates](#getting-template-updates)) |
 | (none) | `kubestui-dist` | Builds KubesTUI binaries for Windows, macOS and Linux (for workstation mode) |
 
 ### Docker Compose import
