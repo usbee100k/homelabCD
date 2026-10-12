@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-ingress
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "25"
+spec:
+  project: homelab
+
+  # The Argo CD web UI Ingress. Bootstrap applies it once with kubectl;
+  # this app keeps it matching bootstrap/argocd/ingress.yaml after that,
+  # so fixes pushed to Git reach the cluster.
+  sources:
+    - repoURL: REPLACE_REPO_URL
+      targetRevision: REPLACE_BRANCH
+      path: bootstrap/argocd
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

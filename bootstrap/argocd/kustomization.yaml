@@ -1,0 +1,8 @@
+# bootstrap/argocd/kustomization.yaml
+# Used by the argocd-ingress app so Argo CD keeps its own Ingress in sync
+# with Git. values.yaml is Helm input for lib/argocd.sh, not a manifest.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ingress.yaml

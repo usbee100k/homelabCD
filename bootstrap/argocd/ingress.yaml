@@ -6,7 +6,9 @@ metadata:
   namespace: argocd
   annotations:
     cert-manager.io/cluster-issuer: homelab-ca
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    # argocd-server runs with server.insecure=true (plain HTTP behind
+    # nginx). HTTPS here makes nginx fail the TLS handshake: 502.
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 spec:
   ingressClassName: nginx
   tls:
@@ -23,4 +25,4 @@ spec:
               service:
                 name: argocd-server
                 port:
-                  number: 443
+                  number: 80

@@ -6,6 +6,7 @@ resources:
   - cert-manager/app.yaml
   - longhorn/app.yaml
   - ingress-nginx/app.yaml
+  - argocd-ingress/app.yaml
   - metrics-server/app.yaml
   - node-status/app.yaml
   - metallb/app.yaml

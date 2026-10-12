@@ -97,6 +97,13 @@ install_cilium() {
 
     log_info "Using Cilium version: ${version}"
 
+    # Native routing must cover every pod IP (network.podSubnet). A smaller
+    # range makes Cilium masquerade pod-to-pod traffic across nodes.
+    if [[ -z "${POD_SUBNET:-}" || "${POD_SUBNET}" == null ]]; then
+        log_error "network.podSubnet is not set in config/cluster.yaml"
+        return 1
+    fi
+
 
 
     #############################################
@@ -156,7 +163,7 @@ install_cilium() {
             --set kubeProxyReplacement=true \
             --set routingMode=native \
             --set autoDirectNodeRoutes=true \
-            --set-string "ipv4NativeRoutingCIDR=10.10.0.0/24" \
+            --set-string "ipv4NativeRoutingCIDR=${POD_SUBNET}" \
             --set bpf.masquerade=true \
             --set bpf.hostLegacyRouting=true \
             --set rollOutCiliumPods=true \
@@ -173,7 +180,7 @@ install_cilium() {
             --set kubeProxyReplacement=true \
             --set routingMode=native \
             --set autoDirectNodeRoutes=true \
-            --set-string "ipv4NativeRoutingCIDR=10.10.0.0/24" \
+            --set-string "ipv4NativeRoutingCIDR=${POD_SUBNET}" \
             --set bpf.masquerade=true \
             --set bpf.hostLegacyRouting=true \
             --set rollOutCiliumPods=true \

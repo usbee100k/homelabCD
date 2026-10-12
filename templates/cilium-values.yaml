@@ -16,7 +16,8 @@ routingMode: native
 
 autoDirectNodeRoutes: true
 
-ipv4NativeRoutingCIDR: 10.10.0.0/24
+# Set from network.podSubnet by lib/cilium.sh (must cover all pod IPs)
+ipv4NativeRoutingCIDR: 10.0.0.0/16
 
 endpointRoutes:
   enabled: true
