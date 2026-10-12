@@ -1,3 +1,16 @@
+# qBittorrent behind a Private Internet Access VPN (gluetun).
+#
+# All containers in a pod share one network. gluetun connects to PIA and
+# its firewall drops every packet that doesn't go through the VPN tunnel
+# (kill switch), so qBittorrent has no way to reach the internet except
+# through PIA, and DNS goes through the tunnel too.
+#
+# - gluetun is a native sidecar: qBittorrent only starts once the VPN is
+#   connected, and the pod doesn't start at all without the PIA login
+#   (Secret pia-vpn, created by "Set Up Torrent VPN": install.sh --run torrent-vpn).
+# - qBittorrent is also bound to the tunnel interface (tun0).
+# - port-sync gives qBittorrent the port PIA forwards, so peers can connect.
+# - The web UI (8080) stays reachable from inside the cluster (ingress).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -29,6 +42,111 @@ spec:
 #          effect: "NoSchedule"
 # THIS IS FOR CONTROL PLANES TO RUN QBIT ON THEM  NOTE TO SELF: I'd keep your current Deployment worker-only and focus
 # next on making Longhorn automatically recover the RWO attachments when a worker disappears.
+
+      # Name lookups go to gluetun's DNS, which answers through the tunnel.
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 127.0.0.1
+
+      initContainers:
+        # Settings qBittorrent reads at start: trust requests from inside
+        # this pod (port-sync uses the API) and only use the VPN interface.
+        - name: qbittorrent-settings
+          image: busybox:1.37
+          command:
+            - /bin/sh
+            - -c
+            - |
+              conf="$(find /config -name qBittorrent.conf -not -path '*/gluetun/*' 2>/dev/null | head -n 1)"
+              if [ -z "${conf}" ]; then
+                echo "No qBittorrent.conf yet (first start); settings apply on the next restart."
+                exit 0
+              fi
+              set_ini() {
+                # set_ini SECTION KEY VALUE (KEY may contain a backslash)
+                k="$(printf '%s' "$2" | sed 's/\\/\\\\/g')"
+                if grep -q "^${k}=" "${conf}"; then
+                  sed -i "s|^${k}=.*|${k}=$3|" "${conf}"
+                elif grep -q "^\[$1\]" "${conf}"; then
+                  sed -i "/^\[$1\]/a ${k}=$3" "${conf}"
+                else
+                  printf '\n[%s]\n%s=%s\n' "$1" "$2" "$3" >> "${conf}"
+                fi
+              }
+              set_ini Preferences 'WebUI\LocalHostAuth' false
+              set_ini BitTorrent 'Session\Interface' tun0
+              set_ini BitTorrent 'Session\InterfaceName' tun0
+              echo "Updated ${conf}"
+          volumeMounts:
+            - name: qbittorrent-config
+              mountPath: /config
+
+        # The VPN. restartPolicy Always makes it a sidecar that runs for the
+        # life of the pod; the startup probe holds qBittorrent back until
+        # the tunnel is up.
+        - name: gluetun
+          image: qmcgaw/gluetun:v3.41.3
+          restartPolicy: Always
+
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+
+          envFrom:
+            # OPENVPN_USER, OPENVPN_PASSWORD and optionally SERVER_REGIONS.
+            - secretRef:
+                name: pia-vpn
+
+          env:
+            - name: VPN_SERVICE_PROVIDER
+              value: "private internet access"
+
+            - name: VPN_TYPE
+              value: "openvpn"
+
+            # Only PIA servers that forward a port, and ask for one.
+            - name: PORT_FORWARD_ONLY
+              value: "true"
+
+            - name: VPN_PORT_FORWARDING
+              value: "on"
+
+            # Let the web UI in from the cluster (ingress), and allow
+            # replies to cluster addresses. Nothing else bypasses the VPN.
+            - name: FIREWALL_INPUT_PORTS
+              value: "8080"
+
+            - name: FIREWALL_OUTBOUND_SUBNETS
+              value: "REPLACE_POD_SUBNET,REPLACE_SERVICE_SUBNET"
+
+            - name: TZ
+              value: "Etc/UTC"
+
+          startupProbe:
+            exec:
+              command: ["/gluetun-entrypoint", "healthcheck"]
+            periodSeconds: 5
+            failureThreshold: 60
+
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 512Mi
+
+          volumeMounts:
+            # Server list and PIA's port-forward token (keeps the same port
+            # for up to 60 days across restarts).
+            - name: qbittorrent-config
+              mountPath: /gluetun
+              subPath: gluetun
+
+            # forwarded_port, read by port-sync.
+            - name: gluetun-status
+              mountPath: /tmp/gluetun
+
       containers:
         - name: qbittorrent
           image: ghcr.io/hotio/qbittorrent:release-5.0.4
@@ -45,9 +163,6 @@ spec:
 
             - name: UMASK
               value: "002"
-
-            - name: VPN_NAMESERVERS
-              value: "false"
 
           ports:
             - name: http
@@ -69,6 +184,41 @@ spec:
             - name: qbittorrent-downloads
               mountPath: /torrents
 
+        # Keeps qBittorrent's listening port equal to the port PIA forwards
+        # (it can change when the VPN reconnects).
+        - name: port-sync
+          image: busybox:1.37
+          command:
+            - /bin/sh
+            - -c
+            - |
+              api=http://127.0.0.1:8080/api/v2/app
+              while true; do
+                port="$(cat /tmp/gluetun/forwarded_port 2>/dev/null)"
+                if [ -n "${port}" ]; then
+                  current="$(wget -qO- "${api}/preferences" 2>/dev/null |
+                    sed -n 's/.*"listen_port":\([0-9]*\).*/\1/p')"
+                  if [ -z "${current}" ]; then
+                    echo "qBittorrent API not reachable yet. If this keeps repeating, restart the pod once:"
+                    echo "  kubectl -n qbittorrent rollout restart deployment qbittorrent"
+                  elif [ "${current}" != "${port}" ]; then
+                    wget -qO- --post-data "json={\"listen_port\":${port},\"random_port\":false,\"upnp\":false,\"current_network_interface\":\"tun0\"}" \
+                      "${api}/setPreferences" >/dev/null &&
+                      echo "qBittorrent now listens on the PIA forwarded port ${port}."
+                  fi
+                fi
+                sleep 30
+              done
+          resources:
+            requests:
+              memory: 8Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: gluetun-status
+              mountPath: /tmp/gluetun
+              readOnly: true
+
       restartPolicy: Always
 
       volumes:
@@ -79,3 +229,6 @@ spec:
         - name: qbittorrent-downloads
           persistentVolumeClaim:
             claimName: qbittorrent-downloads
+
+        - name: gluetun-status
+          emptyDir: {}

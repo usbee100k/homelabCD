@@ -33,7 +33,8 @@ and launches for you (there is also a plain text menu as a fallback).
 | **node-status** | Keeps the node list on every node, so KubesTUI's activity lights also work on workers |
 | **DuckDNS** (optional) | Keeps a `*.duckdns.org` domain pointing at your home IP |
 | **wg-easy** (optional) | WireGuard VPN with a web UI, for reaching the cluster from outside your LAN |
-| **Rancher**, **qBittorrent** | Included as example apps |
+| **qBittorrent** | Torrent client that only runs through a Private Internet Access VPN (see [Torrents through PIA](#torrents-through-pia)) |
+| **Rancher** | Included as an example app |
 
 Every web UI gets its own HTTPS address under your base domain, e.g.
 `argocd.<domain>`, `longhorn.<domain>`, `rancher.<domain>`,
@@ -215,11 +216,44 @@ All of these are in the KubesTUI menu, and can also be run directly with
 | Import Docker Compose App | `compose-import` | Turns a `docker-compose.yml` into an app in your GitOps repository (see below) |
 | Remove Imported App | `compose-remove` | Removes an imported app, including its volumes and secrets |
 | Set Up VPN | `vpn-setup` | Adds or changes the WireGuard VPN (wg-easy) and deploys it through GitOps |
+| Set Up Torrent VPN (PIA) | `torrent-vpn` | Stores your Private Internet Access login for qBittorrent, restarts it, and shows the public IP and forwarded port it uses |
 | VPN Status | `vpn-status` | Shows the VPN server, public endpoint, router forward target, connected clients and handshakes |
 | Generate Join Commands | `join-commands` | Prints fresh join commands |
 | Update homelabCD and KubesTUI | `update` | Pulls the latest homelabCD from GitHub (your saved settings in `config/` are kept) and rebuilds KubesTUI. Doesn't change the cluster. Reopen KubesTUI (`kbtui`) afterwards to use the new version |
 | Update GitOps Templates | `gitops-update` | Merges this homelabCD version's templates into your GitOps repository, keeping your edits and settings (see [Getting template updates](#getting-template-updates)) |
 | (none) | `kubestui-dist` | Builds KubesTUI binaries for Windows, macOS and Linux (for workstation mode) |
+
+### Torrents through PIA
+
+qBittorrent shares its pod with [gluetun](https://github.com/qdm12/gluetun),
+a VPN container connected to Private Internet Access. Containers in a pod
+share one network, and gluetun's firewall drops everything that doesn't go
+through the VPN tunnel, so:
+
+- **Kill switch:** if the VPN drops, qBittorrent's traffic stops; it never
+  falls back to your home connection. qBittorrent is also bound to the
+  tunnel interface (`tun0`).
+- **qBittorrent starts only after the VPN is connected**, and the pod doesn't
+  start at all until a PIA login is stored.
+- **DNS goes through the tunnel** too, so lookups don't leak to your ISP.
+- **Port forwarding:** gluetun only picks PIA servers that forward a port
+  (PIA has none in the US), and `port-sync` keeps qBittorrent's listening
+  port equal to it, so peers can connect to you.
+- The web UI (`qbittorrent.<domain>`) still works from your network through
+  the ingress.
+
+Run **Set Up Torrent VPN (PIA)** (`--run torrent-vpn`) once on a control
+plane. It asks for your PIA username (`p1234567`, not your email), password
+and optionally regions, stores them only in the cluster (Secret
+`qbittorrent/pia-vpn`, never in git), restarts qBittorrent, and prints the
+public IP its traffic uses, which should be a PIA address, not yours.
+
+To check later:
+
+```bash
+kubectl -n qbittorrent logs deploy/qbittorrent -c gluetun     # VPN connection
+kubectl -n qbittorrent logs deploy/qbittorrent -c port-sync   # forwarded port
+```
 
 ### Docker Compose import
 

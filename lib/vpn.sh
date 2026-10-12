@@ -408,3 +408,107 @@ vpn_status() {
 
     (( fail == 0 ))
 }
+
+
+#############################################
+# Torrent VPN: Private Internet Access login for qBittorrent
+#############################################
+#
+# qBittorrent runs behind gluetun (apps/infrastructure/qbittorrent), which
+# connects to PIA with the login stored here as the Secret qbittorrent/
+# pia-vpn. Without it the qBittorrent pod doesn't start, so torrents never
+# run outside the VPN. The login stays in the cluster, never in git.
+#############################################
+
+setup_torrent_vpn() {
+
+    header 2>/dev/null || true
+
+    command -v kubectl >/dev/null 2>&1 && kubectl get nodes >/dev/null 2>&1 || {
+        log_error "Run this on a control plane (kubectl must reach the cluster)."
+        return 1
+    }
+
+    local user pass again regions
+
+    if kubectl -n qbittorrent get secret pia-vpn >/dev/null 2>&1; then
+        log_info "A PIA login is already stored; entering a new one replaces it."
+    fi
+
+    echo
+    echo "Private Internet Access login for qBittorrent's VPN."
+    echo "Use your PIA username (it starts with p, e.g. p1234567), not your email."
+    echo
+
+    while true; do
+        read -rp "PIA username: " user
+        user="${user//[[:space:]]/}"
+        [[ -n "${user}" ]] || { echo "[ERROR] Enter your PIA username."; continue; }
+        [[ "${user}" =~ ^p[0-9]+$ ]] ||
+            echo "[WARN] PIA usernames usually look like p1234567; using \"${user}\" anyway."
+        break
+    done
+
+    while true; do
+        read -rsp "PIA password: " pass
+        echo
+        [[ -n "${pass}" ]] || { echo "[ERROR] Enter your PIA password."; continue; }
+        read -rsp "Repeat password: " again
+        echo
+        [[ "${pass}" == "${again}" ]] && break
+        echo "[ERROR] Passwords did not match."
+    done
+
+    echo
+    echo "Optional: PIA regions to use, comma-separated (e.g. CA Montreal,CA Toronto)."
+    echo "Leave blank for any region. Only regions that support port forwarding are"
+    echo "used either way (PIA has none in the US)."
+    read -rp "Regions [any]: " regions
+
+    kubectl create namespace qbittorrent --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+
+    local args=(
+        --from-literal=OPENVPN_USER="${user}"
+        --from-literal=OPENVPN_PASSWORD="${pass}"
+    )
+    [[ -n "${regions}" ]] && args+=(--from-literal=SERVER_REGIONS="${regions}")
+
+    kubectl -n qbittorrent create secret generic pia-vpn "${args[@]}" \
+        --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+
+    log_ok "PIA login stored in the cluster (Secret qbittorrent/pia-vpn)."
+
+    # Reconnect with the new login.
+    if kubectl -n qbittorrent get deployment qbittorrent >/dev/null 2>&1; then
+        kubectl -n qbittorrent rollout restart deployment qbittorrent >/dev/null
+        log_info "Restarting qBittorrent with the VPN..."
+        if kubectl -n qbittorrent rollout status deployment qbittorrent --timeout=300s; then
+            log_ok "qBittorrent is running through PIA."
+            torrent_vpn_status
+        else
+            log_warn "qBittorrent isn't ready yet. Check the VPN log:"
+            echo "  kubectl -n qbittorrent logs deploy/qbittorrent -c gluetun"
+        fi
+    else
+        log_info "qBittorrent isn't deployed yet; Argo CD starts it with the VPN once it syncs."
+    fi
+}
+
+# Shows the public IP qBittorrent's traffic leaves from and the forwarded port.
+torrent_vpn_status() {
+
+    local pod ip port
+
+    pod="$(kubectl -n qbittorrent get pod -l app=qbittorrent \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)"
+    [[ -n "${pod}" ]] || return 0
+
+    # Asked from the qBittorrent container, so it's the address its traffic uses.
+    ip="$(kubectl -n qbittorrent exec "${pod}" -c qbittorrent -- \
+        curl -fsS --max-time 10 https://ipinfo.io/ip 2>/dev/null || true)"
+    port="$(kubectl -n qbittorrent exec "${pod}" -c port-sync -- \
+        cat /tmp/gluetun/forwarded_port 2>/dev/null || true)"
+
+    echo "  Public IP seen by torrent peers: ${ip:-unknown (VPN still connecting?)}"
+    echo "  PIA forwarded port:              ${port:-not assigned yet}"
+}

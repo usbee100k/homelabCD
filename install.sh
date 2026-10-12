@@ -384,6 +384,9 @@ if [[ "${INSTALLER_MODE}" == "--run" ]]; then
         vpn-setup)
             setup_vpn
             ;;
+        torrent-vpn)
+            setup_torrent_vpn || exit 1
+            ;;
         vpn-status)
             vpn_status || exit 1
             ;;

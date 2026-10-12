@@ -267,6 +267,8 @@ gitops_render_templates() {
     [[ -n "${BASE_DOMAIN:-}" ]] || missing+=("domains.base")
     [[ -n "${ACME_EMAIL:-}" ]] || missing+=("domains.acmeEmail")
     [[ -n "${METALLB_RANGE:-}" ]] || missing+=("network.metallbRange")
+    [[ -n "${POD_SUBNET:-}" && "${POD_SUBNET}" != null ]] || missing+=("network.podSubnet")
+    [[ -n "${SERVICE_SUBNET:-}" && "${SERVICE_SUBNET}" != null ]] || missing+=("network.serviceSubnet")
 
     if [[ "${VPN_ENABLED:-false}" == "true" ]]; then
         [[ -n "${VPN_ENDPOINT:-}" ]] || missing+=("vpn.endpoint")
@@ -315,6 +317,8 @@ KUSTOMIZATION
             -e "s|REPLACE_BRANCH|${GITOPS_BRANCH}|g" \
             -e "s|REPLACE_ACME_EMAIL|${ACME_EMAIL}|g" \
             -e "s|REPLACE_METALLB_RANGE|${METALLB_RANGE}|g" \
+            -e "s|REPLACE_POD_SUBNET|${POD_SUBNET}|g" \
+            -e "s|REPLACE_SERVICE_SUBNET|${SERVICE_SUBNET}|g" \
             -e "s|REPLACE_BASE_DOMAIN|${BASE_DOMAIN}|g" \
             -e "s|REPLACE_VPN_ENDPOINT|${VPN_ENDPOINT:-}|g" \
             -e "s|REPLACE_VPN_PORT|${VPN_PORT:-51820}|g" \
