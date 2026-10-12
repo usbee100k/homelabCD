@@ -94,7 +94,7 @@ install_kubestui() {
         cd "${src}"
         go mod tidy
         # Build beside it, then swap: a running KubesTUI keeps working.
-        CGO_ENABLED=0 go build -o "${dest}.new" .
+        CGO_ENABLED=0 go build -buildvcs=false -o "${dest}.new" .
         mv -f "${dest}.new" "${dest}"
     )
 
@@ -150,7 +150,7 @@ build_kubestui_dist() {
         # -v lists each package as it compiles, so a long build visibly moves.
         (
             cd "${src}"
-            CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" go build -v -trimpath \
+            CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" go build -v -trimpath -buildvcs=false \
                 -ldflags "-s -w -X main.version=${version}" \
                 -o "${out}/kubestui-${os}-${arch}${ext}" .
         ) || {
