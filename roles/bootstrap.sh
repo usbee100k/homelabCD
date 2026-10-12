@@ -316,6 +316,9 @@ bootstrap_cluster() {
     echo " ├── cluster inventory"
     echo " └── Argo CD application definitions"
     echo
+    echo "qBittorrent only runs through the Private Internet Access VPN and waits"
+    echo "for your PIA login: run \"Set Up Torrent VPN (PIA)\" (--run torrent-vpn)."
+    echo
 
 }
 

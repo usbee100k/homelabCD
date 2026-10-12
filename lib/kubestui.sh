@@ -72,7 +72,10 @@ install_kubestui() {
 
     if [[ -d "${src}/.git" ]]; then
         log_info "Updating KubesTUI from ${src}"
-        git -C "${src}" pull --ff-only || log_warn "KubesTUI git pull failed; building existing checkout"
+        # safe.directory: "Update homelabCD" hands ROOT_DIR (and .src) to the
+        # clone's owner, and git as root refuses a folder owned by someone else.
+        git -c safe.directory="${src}" -C "${src}" pull --ff-only ||
+            log_warn "KubesTUI git pull failed; building existing checkout"
     elif [[ -f "${src}/main.go" ]]; then
         log_ok "Using local KubesTUI sources: ${src}"
     else
@@ -123,7 +126,7 @@ build_kubestui_dist() {
         return 1
     }
 
-    version="$(git -C "${src}" describe --tags --always --dirty 2>/dev/null || echo dev)"
+    version="$(git -c safe.directory="${src}" -C "${src}" describe --tags --always --dirty 2>/dev/null || echo dev)"
 
     mkdir -p "${out}"
     rm -f "${out}"/kubestui-* "${out}/SHA256SUMS"

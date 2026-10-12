@@ -144,6 +144,8 @@ gitops_checkout() {
         log_error "Cannot access GitHub repository:"
         log_error "  ${url}"
         log_error "Verify that the deploy key was added to this repository."
+        log_error "Run this on the control plane that bootstrapped the cluster: it holds"
+        log_error "the deploy key (${SSH_KEY_PATH})."
         return 1
     fi
 
@@ -297,6 +299,11 @@ gitops_render_templates() {
         --exclude "apps/applications/" \
         "${ROOT_DIR}/" \
         "${out}/"
+
+    # Manifests are never executable. A stray mode bit (a chmod, or a
+    # Windows/OneDrive checkout) would otherwise show up as a change and can
+    # block the first merge, which can't resolve mode conflicts.
+    find "${out}" -type f -exec chmod 644 {} +
 
     # apps/applications holds apps imported from Docker Compose (KubesTUI);
     # they live only in the GitOps repo. An empty list keeps the
