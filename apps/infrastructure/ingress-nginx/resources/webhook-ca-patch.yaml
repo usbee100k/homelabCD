@@ -35,6 +35,39 @@ subjects:
     namespace: ingress-nginx
 
 ---
+# The Job reads the CA from this one Secret. Without it, kubectl gets
+# Forbidden and every attempt fails (backoffLimit + 1 pods in Error).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ingress-nginx-webhook-ca-patch
+  namespace: ingress-nginx
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    resourceNames:
+      - ingress-nginx-admission
+    verbs:
+      - get
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ingress-nginx-webhook-ca-patch
+  namespace: ingress-nginx
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ingress-nginx-webhook-ca-patch
+subjects:
+  - kind: ServiceAccount
+    name: ingress-nginx-webhook-ca-patch
+    namespace: ingress-nginx
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -42,7 +75,8 @@ metadata:
   namespace: ingress-nginx
   annotations:
     argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    # Successful runs are removed; a failed one stays for its logs.
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
 spec:
   backoffLimit: 3
   template:
