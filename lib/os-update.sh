@@ -145,6 +145,10 @@ spec:
             - -c
             - |
               set -e
+              # Raise the inotify limits (as new nodes get them); the
+              # default runs out on busy nodes ("too many open files").
+              printf 'fs.inotify.max_user_instances = 8192\nfs.inotify.max_user_watches = 524288\n' > /etc/sysctl.d/90-homelabcd-inotify.conf
+              sysctl -q -p /etc/sysctl.d/90-homelabcd-inotify.conf || true
               echo ">>> apt update"
               apt-get -o DPkg::Lock::Timeout=300 update
               echo
@@ -154,6 +158,7 @@ spec:
                 -y --with-new-pkgs upgrade
               echo
               if [ -f /var/run/reboot-required ]; then echo "HOMELABCD: REBOOT REQUIRED"; fi
+              echo "HOMELABCD: DONE"
 YAML
 
         # Wait for the pod to start, then follow its output.
@@ -177,6 +182,15 @@ YAML
             [[ "${result}" == 1/* || "${result}" == */[1-9]* ]] && break
             sleep 5
         done
+
+        # If the live stream broke off, show the whole output now (reading
+        # the finished log doesn't need a file watcher on the node).
+        if ! grep -q "HOMELABCD: DONE" "${out}"; then
+            echo
+            log_warn "The live output from ${name} stopped early; full output:"
+            kubectl -n "${ns}" logs "job/${job}" 2>&1 | tee "${out}" || true
+        fi
+        echo
 
         if [[ "${result}" == 1/* ]]; then
             log_ok "${name}: operating system updated."

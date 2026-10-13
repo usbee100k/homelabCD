@@ -167,6 +167,14 @@ net.ipv4.ip_forward = 1
 vm.swappiness = 0
 EOF
 
+    # The default inotify limits (128 instances) run out on a node with
+    # many pods: "failed to create fsnotify watcher: too many open files"
+    # from kubectl logs -f, kubelet and apps that watch files.
+cat >/etc/sysctl.d/90-homelabcd-inotify.conf <<EOF
+fs.inotify.max_user_instances = 8192
+fs.inotify.max_user_watches = 524288
+EOF
+
     sysctl --system
 
     log_ok "Sysctl applied."
