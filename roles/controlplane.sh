@@ -339,18 +339,38 @@ join_controlplane() {
 
     for i in {1..60}; do
         NODE_NAME="$(current_node_name)" && break
+        (( i % 6 == 0 )) && log_info "Node $(hostname) not registered yet ($(( i * 5 ))s)..."
         sleep 5
     done
 
     if [[ -z "${NODE_NAME}" ]]; then
         log_error "Node $(hostname) did not register with the cluster."
+        echo "  Check: journalctl -u kubelet -n 50 --no-pager"
         exit 1
     fi
 
-    kubectl wait \
-        --for=condition=Ready \
-        node/"${NODE_NAME}" \
-        --timeout=5m
+    log_ok "Node ${NODE_NAME} registered. Waiting for it to be Ready (networking pods start first)..."
+
+    # Show progress instead of a silent "kubectl wait".
+    local ready=""
+    for i in {1..60}; do
+        ready="$(kubectl get node "${NODE_NAME}" \
+            -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)"
+        [[ "${ready}" == "True" ]] && break
+        if (( i % 6 == 0 )); then
+            log_info "Still NotReady ($(( i * 5 ))s). Pods on this node:"
+            kubectl get pods -A -o wide --field-selector spec.nodeName="${NODE_NAME}" \
+                --no-headers 2>/dev/null | awk '{print "    " $1 "/" $2 "  " $4}'
+        fi
+        sleep 5
+    done
+
+    if [[ "${ready}" != "True" ]]; then
+        log_error "Node ${NODE_NAME} did not become Ready within 5 minutes."
+        echo "  Check: kubectl describe node ${NODE_NAME}"
+        echo "         kubectl -n kube-system get pods -o wide | grep ${NODE_NAME}"
+        exit 1
+    fi
 
     finish_step
 
