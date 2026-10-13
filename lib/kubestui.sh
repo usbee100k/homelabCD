@@ -250,6 +250,67 @@ homelabcd_keep_local_config() {
 
 
 #############################################
+# Follow GitHub when the clone has its own commits
+#############################################
+#
+# homelabCD never commits in its own clone, so local commits are edits
+# made by hand (often config/ settings). When they and GitHub have both
+# moved on, `git pull --ff-only` refuses. Instead: keep the local commits
+# on a backup branch, keep any other uncommitted edits in the stash, move
+# to GitHub's version and put back the config/ files changed locally.
+#############################################
+
+homelabcd_follow_upstream() {
+
+    local as=("$@")
+    local g=("${as[@]}" git -C "${ROOT_DIR}")
+    local base f backup keep stashed=""
+
+    "${g[@]}" fetch -q || return 1
+
+    base="$("${g[@]}" merge-base HEAD '@{u}')" || return 1
+
+    # Fast-forward possible (or nothing new): the normal pull handles it.
+    [[ "${base}" == "$("${g[@]}" rev-parse HEAD)" || \
+       "${base}" == "$("${g[@]}" rev-parse '@{u}')" ]] && return 0
+
+    backup="homelabcd-local-$(date +%Y%m%d-%H%M%S)"
+    "${g[@]}" branch "${backup}" HEAD || return 1
+
+    log_warn "This clone has commits that are not on GitHub:"
+    "${g[@]}" log --oneline '@{u}..HEAD' | sed 's/^/  /'
+    log_warn "They are kept on branch ${backup}; updating to GitHub's version."
+
+    # Save config/ files changed here since the common commit.
+    keep="$(mktemp -d)"
+    while read -r f; do
+        [[ -n "${f}" && -f "${ROOT_DIR}/${f}" ]] || continue
+        mkdir -p "${keep}/$(dirname "${f}")"
+        cp -a "${ROOT_DIR}/${f}" "${keep}/${f}"
+    done < <("${g[@]}" diff --name-only "${base}" -- config
+             "${g[@]}" ls-files --others --exclude-standard -- config)
+
+    if [[ -n "$("${g[@]}" status --porcelain)" ]]; then
+        "${g[@]}" stash push -q -u -m "homelabcd update ${backup}" && stashed=1
+    fi
+
+    "${g[@]}" reset -q --hard '@{u}' || { rm -rf "${keep}"; return 1; }
+
+    while read -r f; do
+        [[ -n "${f}" ]] || continue
+        cp -a "${keep}/${f}" "${ROOT_DIR}/${f}"
+        log_warn "Kept your ${f}."
+    done < <(cd "${keep}" && find . -type f | sed 's|^\./||')
+
+    rm -rf "${keep}"
+
+    [[ -n "${stashed}" ]] && log_warn "Your other uncommitted edits are in: git stash list"
+
+    return 0
+}
+
+
+#############################################
 # Update homelabCD and KubesTUI
 #############################################
 #
@@ -288,7 +349,8 @@ update_homelabcd() {
 
         before="$("${as[@]}" git -C "${ROOT_DIR}" rev-parse --short HEAD)"
 
-        if ! "${as[@]}" git -C "${ROOT_DIR}" pull --ff-only --autostash; then
+        if ! homelabcd_follow_upstream "${as[@]}" ||
+            ! "${as[@]}" git -C "${ROOT_DIR}" pull --ff-only --autostash; then
             log_error "Could not update homelabCD (see the git message above)."
             return 1
         fi
