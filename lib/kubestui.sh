@@ -312,6 +312,9 @@ update_homelabcd() {
     source "${ROOT_DIR}/lib/cilium.sh"
     ensure_cilium_routing_cidr || log_warn "Fix Cilium's routing CIDR, then run this update again."
 
+    source "${ROOT_DIR}/lib/kubevip.sh"
+    ensure_kubevip_all_controlplanes || log_warn "kube-vip is missing on a control plane; see above, then run this update again."
+
     echo
 
     KUBESTUI_FORCE=1 install_kubestui || return 1

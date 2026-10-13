@@ -330,6 +330,20 @@ join_controlplane() {
     finish_step
 
     #########################################
+    # kube-vip
+    #########################################
+    #
+    # Every control plane runs kube-vip, so the VIP (and with it the
+    # API for workers and kubectl) moves to a surviving control plane.
+    #########################################
+
+    next_step "Configuring kube-vip"
+
+    join_kubevip
+
+    finish_step
+
+    #########################################
     # Wait For Node Registration
     #########################################
 
