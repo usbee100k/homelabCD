@@ -92,6 +92,18 @@ join_controlplane() {
     # Prevent Duplicate Join
     #########################################
 
+    if [[ -f /etc/kubernetes/admin.conf &&
+          -f /etc/kubernetes/manifests/kube-apiserver.yaml ]] &&
+        KUBECONFIG=/etc/kubernetes/admin.conf current_node_name >/dev/null; then
+        log_info "This node already joined the control plane; finishing its setup."
+        rm -f "${JOIN_SCRIPT}" # a fresh one may have been copied here; not needed
+        # Number the remaining steps as in a full run.
+        CURRENT_STEP="$(awk '/^[[:space:]]*next_step "Configuring kubectl"/ {print n; exit}
+            /^[[:space:]]*next_step[[:space:]]/ {n++}' "${BASH_SOURCE[0]}")"
+        finish_controlplane_join
+        return 0
+    fi
+
     if [[ -f /etc/kubernetes/admin.conf ]]; then
         log_error "This node is already a member of a Kubernetes cluster."
         echo
@@ -318,6 +330,20 @@ join_controlplane() {
     done
 
     finish_step
+
+    finish_controlplane_join
+}
+
+
+#############################################
+# STEPS AFTER kubeadm join
+#############################################
+#
+# Separate so a join that stopped after kubeadm join succeeded can
+# be finished by running the control-plane join again.
+#############################################
+
+finish_controlplane_join() {
 
     #########################################
     # Configure kubectl

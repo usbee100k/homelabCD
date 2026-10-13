@@ -41,8 +41,17 @@ join_kubevip() {
 
     local image version
 
-    image="$(kubectl -n kube-system get pods -o jsonpath='{range .items[*]}{.spec.containers[0].image}{"\n"}{end}' 2>/dev/null \
-        | grep -m1 'kube-vip/kube-vip:')"
+    local i
+    image=""
+
+    # The API can be briefly unavailable right after a join while etcd
+    # adds the new member, so retry. Not finding it is not fatal.
+    for i in {1..12}; do
+        image="$(kubectl -n kube-system get pods -o jsonpath='{range .items[*]}{.spec.containers[0].image}{"\n"}{end}' 2>/dev/null \
+            | grep -m1 'kube-vip/kube-vip:' || true)"
+        [[ -n "${image}" ]] && break
+        sleep 5
+    done
 
     version="${image##*:}"
 
