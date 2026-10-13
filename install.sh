@@ -217,6 +217,7 @@ LIBRARIES=(
     health
     report
     repair
+    os-update
     join
     bootstrap-dependencies
     bootstrap-secrets
@@ -411,6 +412,9 @@ if [[ "${INSTALLER_MODE}" == "--run" ]]; then
             ;;
         rename)
             rename_cluster || exit 1
+            ;;
+        os-update)
+            update_node_os || exit 1
             ;;
         *)
             die "Unknown installer operation: ${INSTALLER_OP:-<empty>}"
