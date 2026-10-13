@@ -114,6 +114,27 @@ After that it runs:
 From then on, **Argo CD keeps the cluster in sync with your GitOps
 repository.** To change what runs in the cluster, commit to that repository.
 
+### Logging in to Argo CD
+
+Open `https://argocd.<domain>` and log in as **`admin`**. Argo CD generates the
+first password; read it on a control plane node:
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d; echo
+```
+
+After logging in, set your own password (**User Info → Update Password**),
+then delete the generated one, which Argo CD no longer needs:
+
+```bash
+kubectl -n argocd delete secret argocd-initial-admin-secret
+```
+
+If the dashboard shows for a second and then sends you back to the login page,
+run **Cluster Health Check**: pods on different nodes probably can't reach each
+other (see the Cilium routing line).
+
 ---
 
 ## Your GitOps repository
@@ -287,6 +308,43 @@ KubesTUI is the terminal UI for everything above. It runs in two modes:
   kubeconfig), then runs homelabCD operations on that control plane and opens
   SSH sessions to any node in its built-in terminal. Its data is stored under
   `~/.kubestui`.
+
+### Command Center
+
+The first item in the menu (both modes): a live, btop-style view of the whole
+cluster that refreshes every 2 seconds.
+
+| Panel | Shows |
+|---|---|
+| 1 cluster | API health and latency, VIP/API address, Kubernetes version, node/pod/workload/app totals, and CPU, memory and network graphs |
+| 2 nodes | Every node: IP, role, CPU and memory meters with history, disk, network ↓↑, pods, status (a powered-off node shows *unreachable* within seconds) |
+| 3 pods | All pods, like btop's process list: namespace, node, ready, restarts, CPU, memory, status |
+| 4 namespaces | Pods and usage per namespace; Enter shows only that namespace's pods |
+| 5 apps | Argo CD applications: sync and health |
+| 6 network | MetalLB LAN IPs (and pool usage) and ingress hostnames |
+| 7 storage | Longhorn disk space per node, volumes and their health, other claims |
+| 8 alerts | What needs attention (down nodes, crashing pods, degraded apps or volumes, full disks, expiring certificates), then recent warning events |
+
+| Key | Action |
+|---|---|
+| 1-8 / Tab / mouse | Pick a panel (narrow terminals show some as tabs; ←/→ switches) |
+| ↑↓ PgUp PgDn / wheel | Select |
+| Enter / double-click | Details (live): node, pod, app, IP, volume, alert |
+| / | Search pods (Enter keeps the filter, Esc clears it) |
+| S / R | Sort (CPU, memory, restarts, age, name, status) / reverse |
+| Z | Zoom the panel to full screen |
+| L | Logs of the selected pod (C next container, P previous run) |
+| X | Restart (delete) the selected pod; its controller starts a new one |
+| C | Cordon or uncordon the selected node |
+| + / - | Refresh faster or slower (1s to 30s); P pauses |
+| Esc | Close details, clear filters, then back to the menu |
+
+It reads the Kubernetes API directly: with `admin.conf` on a control plane,
+and with the workstation's own credential (through the built-in VPN when
+away). Usage needs metrics-server, disk and network come from the kubelet,
+and the apps and storage panels need Argo CD and Longhorn. Restart and cordon
+ask first, and in node mode only work in LIVE mode. Workers have no cluster
+access, so open it on a control plane or a workstation.
 
 While an operation is running:
 
