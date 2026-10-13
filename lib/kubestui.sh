@@ -307,6 +307,13 @@ update_homelabcd() {
 
     echo
 
+    # Repair cluster settings that older homelabCD versions got wrong. The
+    # code just pulled isn't loaded in this shell yet, so load it first.
+    source "${ROOT_DIR}/lib/cilium.sh"
+    ensure_cilium_routing_cidr || log_warn "Fix Cilium's routing CIDR, then run this update again."
+
+    echo
+
     KUBESTUI_FORCE=1 install_kubestui || return 1
 
     echo

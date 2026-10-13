@@ -222,6 +222,12 @@ cluster_health() {
     health_check_rollout "Cilium operator" deployment kube-system cilium-operator
     health_check_rollout "CoreDNS" deployment kube-system coredns
 
+    if out="$(cilium_routing_ok)"; then
+        health_pass "Cilium native routing covers the pod subnet"
+    else
+        health_fail "${out}: pods on different nodes can't talk. Run \"Update homelabCD and KubesTUI\" to fix it"
+    fi
+
     if command -v cilium >/dev/null 2>&1; then
         if out="$(cilium status --wait-duration 10s 2>&1 | grep -E 'Cilium:|Operator:|Hubble|Errors|Warnings' )"; then
             health_detail <<< "${out}"
