@@ -6,8 +6,9 @@ preUpgradeChecker:
   jobEnabled: false
   upgradeVersionCheck: false
 
-# Global tolerations ensure CSI plugins, Instance Managers, and other 
-# dynamically created components also schedule on tainted control-plane nodes.
+# Tolerations for the parts this chart deploys (manager, driver, UI,
+# webhooks). The parts Longhorn starts itself (engine image, CSI plugin,
+# instance managers) follow defaultSettings.taintToleration below.
 global:
   tolerations:
     - key: "node-role.kubernetes.io/control-plane"
@@ -73,7 +74,16 @@ defaultSettings:
   defaultEngineImage: "longhornio/longhorn-engine:v1.9.0"
 
   defaultReplicaCount: 3
-  replicaSoftAntiAffinity: true
+  # Longhorn's own parts run on the control planes too, so they can keep
+  # copies of volumes (without this only untainted nodes can).
+  taintToleration: "node-role.kubernetes.io/control-plane:NoSchedule;node-role.kubernetes.io/master:NoSchedule"
+  # Each copy of a volume on a different node, so losing a node never
+  # loses a volume; copies are moved to nodes that join or come back.
+  replicaSoftAntiAffinity: false
+  replicaAutoBalance: best-effort
+  # When a node goes down, Longhorn removes its stuck pods so their apps
+  # start on another node with their volumes.
+  nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
   storageMinimalAvailablePercentage: 10
   # CRITICAL: Prevents Longhorn from using disks on nodes not explicitly labeled
   # You MUST run: kubectl label nodes <node-name> node.longhorn.io/create-default-disk=true

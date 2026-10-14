@@ -198,6 +198,7 @@ LIBRARIES=(
     node-labels
     longhorn-disk
     longhorn-migrate
+    longhorn-spread
     domains
     vpn
     compose
@@ -399,6 +400,9 @@ if [[ "${INSTALLER_MODE}" == "--run" ]]; then
             ;;
         app-storage)
             app_storage || exit 1
+            ;;
+        longhorn-spread)
+            spread_longhorn_storage || exit 1
             ;;
         update)
             update_homelabcd || exit 1

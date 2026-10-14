@@ -393,6 +393,13 @@ cluster_health() {
         health_detail <<< "${out}"
     fi
 
+    # Copies all on one node, or nowhere to fail over (lib/longhorn-spread.sh).
+    out="$(lh_spread_problems 2>/dev/null || true)"
+    if [[ -n "${out}" ]]; then
+        health_warn "A node going down would take volumes with it (fix: Spread Storage Across Nodes):"
+        health_detail <<< "${out}"
+    fi
+
     if ! out="$(kubectl get certificates -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"/"}{.metadata.name}{" "}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null |
         awk '$2 != "True" {print}')"; then
         health_warn "cert-manager not installed (no Certificate resource type)"

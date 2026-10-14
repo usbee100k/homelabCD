@@ -27,7 +27,7 @@ and launches for you (there is also a plain text menu as a fallback).
 | **MetalLB** | LAN IPs for `LoadBalancer` services from a range you choose; announced only from healthy nodes |
 | **ingress-nginx** | HTTP(S) entry point for web UIs |
 | **cert-manager** | Automatic Let's Encrypt certificates (HTTP-01) |
-| **Longhorn** | Replicated block storage across nodes, optionally on a dedicated disk |
+| **Longhorn** | Replicated block storage: each volume has copies on different nodes (control planes included), moved to nodes that join, and its app starts on another node when one goes down. Optionally on a dedicated disk |
 | **metrics-server** | `kubectl top` and resource metrics |
 | **node-feature-discovery** | Labels nodes with their hardware features |
 | **node-status** | Keeps the node list on every node, so KubesTUI's activity lights also work on workers |
@@ -256,6 +256,7 @@ All of these are in the KubesTUI menu, and can also be run directly with
 | Rename Cluster | `rename` | Changes the cluster name shown in KubesTUI and reports (`cluster.name` in `config/cluster.yaml`). Doesn't touch the running cluster |
 | Repair Existing Node | `repair` | Restarts containerd and kubelet, shows recent errors and the node status |
 | Move Node to Dedicated Longhorn Disk | `longhorn-disk` | Formats a spare disk, adds it to Longhorn, moves that node's replicas off the OS disk, then removes the old disk. No downtime; asks before erasing anything; re-running resumes an interrupted move |
+| Spread Storage Across Nodes | `longhorn-spread` | Shows which nodes hold each volume's copies and makes Longhorn keep them on different nodes and fail over (see below) |
 | Import Docker Compose App | `compose-import` | Turns a `docker-compose.yml` into an app in your GitOps repository, optionally bringing its data from a node (see below) |
 | Remove Imported App | `compose-remove` | Removes an imported app, including its volumes and secrets |
 | Change App Storage | `app-storage` | Moves a folder of an app between a Longhorn volume and a folder on a node's disk, optionally copying the files (see below) |
@@ -384,6 +385,39 @@ panel.
   conflicts with them. Deleting an entry there puts back the original.
 - Old Longhorn volumes are kept, so no data is deleted.
 
+### Spread Storage Across Nodes
+
+Longhorn keeps each volume as copies (replicas) on several nodes' disks;
+the volume itself attaches to whichever node runs its app, so **NODE** in
+the Command Center's storage panel is where the app runs and **COPIES** is
+where the data is. If every copy is on one node, losing that node loses the
+volume. This shows each node (does it keep copies, how many, space) and
+each volume (which nodes hold its copies, flagged when all are on one node
+or none exist), then asks before changing:
+
+- **Copies on the control planes:** Longhorn only keeps copies where its
+  engine runs, and on clusters set up with older homelabCD versions it
+  didn't run on tainted control planes (`taint-toleration`). Longhorn
+  allows this change only while no volume is in use, so the apps using
+  volumes are stopped for a minute or two (Argo CD paused for them) and
+  started again; if anything goes wrong, or you press Ctrl+C, they're
+  started again too, and a later run finishes it.
+- **One copy per node** (`replica-soft-anti-affinity=false`) and
+  **rebalancing** (`replica-auto-balance=best-effort`): Longhorn builds a
+  copy on a node without one before removing the extra copy, so the data is
+  never at risk. It continues in the background; big volumes take a while.
+- **Failover** (`node-down-pod-deletion-policy`): when a node goes down,
+  Longhorn removes its stuck pods so the apps start on another node with
+  their volumes, instead of waiting for the node to come back.
+
+Apps run on nodes without a control-plane taint (the workers, and the first
+control plane), so for an app to move when its node goes down another of
+those must be up; it warns when only one is. New clusters get these
+settings at install; run **Update GitOps Templates** so yours has them in
+`apps/infrastructure/longhorn/values.yaml` too. Also: **B** in the Command
+Center's storage panel. The health check warns while a node going down
+would take a volume with it.
+
 ### Update Operating System
 
 Lists every node with its OS version and asks which to update (`a` for all,
@@ -431,7 +465,7 @@ The Command Center tab has the tools:
 | Item | What it does |
 |---|---|
 | Command Center | Live view of the whole cluster (below) |
-| Files | Two-pane file manager across this computer and every node (below) |
+| Files | Two-pane file manager across this computer, every node and every Longhorn volume (below) |
 | SSH Console | A shell on any node; **K** installs this machine's key on a node once, so later logins need no password. Opens instantly with the node list the activity lights already have, then refreshes |
 | Transfer Files to a Node | (workstation) Copy files or folders from this computer to a node (below) |
 | Open Shell on Control Plane, Open k9s | (workstation) A terminal on the control plane; k9s on this computer |
@@ -460,10 +494,30 @@ Copy and move take the fastest route:
 
 | From → to | How |
 |---|---|
+| into / out of a Longhorn volume | A tar stream through the volume's helper pod (`kubectl exec`) |
 | node → another node | Straight between the two nodes with two Kubernetes Jobs: a receiver on the destination (`nc -l \| tar -x`) and a sender on the source (`tar -c \| nc`), in the `kubestui` namespace. The data never goes through your computer; the Jobs are removed afterwards |
 | within one node | `cp -a` / `mv` on the node |
 | this computer ↔ node | tar over SSH |
 | hosts that aren't cluster nodes | relayed through KubesTUI |
+
+**Longhorn volumes.** The device list (**o**) also has a **Longhorn
+volumes** section: every volume with its size, the node it's attached to
+and the app using it. Open one in a pane and it works like any other
+device: browse, preview, rename, delete, and copy files into or out of it.
+This is how to give a converted Docker Compose app its old config: put the
+old config folder (on this computer or a node) in one pane, the app's
+volume in the other, and copy. In the Command Center, **F** in the storage
+panel opens Files with the selected volume already in the right pane.
+
+- A volume isn't a folder on a node's disk, so opening one starts a small
+  helper pod that mounts it at `/data`, on the node it's attached to
+  (which works while the app is running). The pane can't go above `/data`.
+  The pod is removed when you switch away or close Files (and after 4
+  hours at the latest).
+- Files copied into a volume get the owner of the folder they land in
+  (e.g. `1000:1000` for linuxserver images), so the app can write to them.
+- Then it offers to restart the app using the volume, so it picks the
+  files up (`kubectl rollout restart`).
 
 Safety: system folders (`/etc`, `/usr`, `/boot`, `/var/lib/kubelet`,
 `/var/lib/containerd`, `/var/lib/etcd`, `/var/lib/longhorn`, ...) can be
@@ -506,8 +560,8 @@ cluster that refreshes every 2 seconds.
 | 4 namespaces | Pods and usage per namespace; Enter shows only that namespace's pods |
 | 5 apps | Argo CD applications: sync and health |
 | 6 network | MetalLB LAN IPs (and pool usage) and ingress hostnames |
-| 7 storage | Longhorn disk space per node, volumes and their health, other claims |
-| 8 alerts | What needs attention (down nodes, crashing pods, degraded apps or volumes, full disks, expiring certificates), then recent warning events |
+| 7 storage | Longhorn disk space per node, volumes and their health, the node running each one's app (NODE) and the nodes holding its copies (COPIES, yellow when all on one node), other claims |
+| 8 alerts | What needs attention (down nodes, crashing pods, degraded apps or volumes, volumes with every copy on one node, full disks, expiring certificates), then recent warning events |
 
 | Key | Action |
 |---|---|
@@ -520,7 +574,9 @@ cluster that refreshes every 2 seconds.
 | L | Logs of the selected pod (C next container, P previous run) |
 | X | Restart (delete) the selected pod; its controller starts a new one |
 | C | Cordon or uncordon the selected node |
+| F | (storage panel) Files on the selected Longhorn volume |
 | E | (storage panel) Change App Storage |
+| B | (storage panel) Spread Storage Across Nodes |
 | + / - | Refresh faster or slower (1s to 30s); P pauses |
 | Esc | Close details, clear filters, then back to the menu |
 
