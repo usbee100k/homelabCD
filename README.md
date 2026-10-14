@@ -213,6 +213,27 @@ point are what later updates bring in.
 When a node joins without a fresh token, it gets its join command from the
 encrypted bootstrap package.
 
+**Control planes and failover.** Every control plane runs a copy of etcd
+(the cluster's database), which only works while more than half of its
+members are up:
+
+| Control planes | Can lose |
+|---|---|
+| 1 | none: if it goes down, the cluster stops (running containers keep running) |
+| 2 | **none**: either one going down stops the cluster |
+| 3 | 1 |
+| 5 | 2 |
+
+So for a cluster that survives losing a control plane, run **3** (always an
+odd number). Every control plane also runs kube-vip, so the VIP (and with it
+the API for workers and kubectl) moves to a surviving one. Control planes
+joined with an older homelabCD get kube-vip when you run **Update homelabCD
+and KubesTUI** on the bootstrap control plane. Reboot or shut down one
+control plane at a time.
+
+If a control-plane join stops after `kubeadm join` succeeded, run the same
+join again: it finishes the remaining steps instead of starting over.
+
 > **About the "control plane" question during a remote join:** the fresh
 > join token is always created on an **existing control plane**, even when
 > you're adding a worker. This doesn't make the new node a control plane.
@@ -235,13 +256,15 @@ All of these are in the KubesTUI menu, and can also be run directly with
 | Rename Cluster | `rename` | Changes the cluster name shown in KubesTUI and reports (`cluster.name` in `config/cluster.yaml`). Doesn't touch the running cluster |
 | Repair Existing Node | `repair` | Restarts containerd and kubelet, shows recent errors and the node status |
 | Move Node to Dedicated Longhorn Disk | `longhorn-disk` | Formats a spare disk, adds it to Longhorn, moves that node's replicas off the OS disk, then removes the old disk. No downtime; asks before erasing anything; re-running resumes an interrupted move |
-| Import Docker Compose App | `compose-import` | Turns a `docker-compose.yml` into an app in your GitOps repository (see below) |
+| Import Docker Compose App | `compose-import` | Turns a `docker-compose.yml` into an app in your GitOps repository, optionally bringing its data from a node (see below) |
 | Remove Imported App | `compose-remove` | Removes an imported app, including its volumes and secrets |
+| Change App Storage | `app-storage` | Moves a folder of an app between a Longhorn volume and a folder on a node's disk, optionally copying the files (see below) |
 | Set Up VPN | `vpn-setup` | Adds or changes the WireGuard VPN (wg-easy) and deploys it through GitOps |
 | Set Up Torrent VPN (PIA) | `torrent-vpn` | Stores your Private Internet Access login for qBittorrent, restarts it, and shows the public IP and forwarded port it uses |
 | VPN Status | `vpn-status` | Shows the VPN server, public endpoint, router forward target, connected clients and handshakes |
 | Generate Join Commands | `join-commands` | Prints fresh join commands |
-| Update homelabCD and KubesTUI | `update` | Pulls the latest homelabCD from GitHub (your saved settings in `config/` are kept) and rebuilds KubesTUI. Doesn't change the cluster. Reopen KubesTUI (`kbtui`) afterwards to use the new version |
+| Update Operating System | `os-update` | `apt update` and `apt upgrade -y` on all nodes or the ones you pick, then optional safe reboots (see below) |
+| Update homelabCD and KubesTUI | `update` | Pulls the latest homelabCD from GitHub (your saved settings in `config/` are kept; commits made by hand in the clone are saved on a `homelabcd-local-<date>` branch) and rebuilds KubesTUI. Run on the bootstrap control plane, it also adds kube-vip to control planes that don't have it. Reopen KubesTUI (`kbtui`) afterwards to use the new version |
 | Update GitOps Templates | `gitops-update` | Merges this homelabCD version's templates into your GitOps repository, keeping your edits and settings (see [Getting template updates](#getting-template-updates)) |
 | (none) | `kubestui-dist` | Builds KubesTUI binaries for Windows, macOS and Linux (for workstation mode) |
 
@@ -316,6 +339,66 @@ Point it at a `docker-compose.yml` and it writes Kubernetes manifests to
 
 Then it commits, lets Argo CD deploy the app, and waits until it is healthy.
 
+**Where the compose file is.** In the workstation app the form asks
+*Compose file on*: **This computer** (type a path, drop the file, or
+**Browse…** for the Windows file picker) or **any node** that's on (shown
+with a green/red light). For a node, **Browse…** opens the node file
+browser:
+
+| Key | Action |
+|---|---|
+| type | filter the folder |
+| Enter / → | open a folder, pick a file |
+| ← / Backspace | up a folder |
+| / | search names in this folder and everything below |
+| Ctrl+F | find every compose file on the node |
+| ~ / Ctrl+G | home / go to a typed path |
+| Ctrl+P | pick the current folder |
+
+**Bringing the data along.** When the compose file is on a node, its
+`.env` and small config files come with it, and every folder it mounts is
+measured there. For each folder the import suggests a Longhorn volume size
+that fits (about 1.5x the data; config folders ~1Gi) and asks *copy the data
+from <node>:<folder> into it [y]*. Folders of 50 GiB or more (media
+libraries) default to staying where they are on that node instead. The
+copies run before anything is pushed, so the app's first start already has
+its configs; if a copy fails, nothing is pushed.
+
+### Change App Storage
+
+Choose where an app keeps each folder (for example qBittorrent's
+`/torrents`): a **Longhorn volume** (replicated across nodes; existing or
+new, any size) or a **folder on a node's disk** (the app then always runs
+on that node). It lists the deployed apps and each folder with where it
+lives now; pick one, pick the new storage, and it commits the change and
+lets Argo CD roll it out. Also: **E** in the Command Center's storage
+panel.
+
+- **Copy the files:** it offers to copy them from the old storage to the
+  new one. The app is stopped while copying (Argo CD is paused for that
+  app only), then started with the new storage. If the copy fails, nothing
+  changes and the app starts again on its old storage.
+- Your choices are saved in `storage-patch.yaml` (plus `storage-pvcs.yaml`
+  for new volumes) next to the app's files, applied on top of them, so the
+  app's own files are untouched and **Update GitOps Templates** never
+  conflicts with them. Deleting an entry there puts back the original.
+- Old Longhorn volumes are kept, so no data is deleted.
+
+### Update Operating System
+
+Lists every node with its OS version and asks which to update (`a` for all,
+or numbers). Each one gets `apt update` and `apt upgrade -y`, one node at a
+time, with the output live. It runs through Kubernetes (no SSH to each node
+needed), keeps your config files, leaves Kubernetes packages on their
+version, and skips nodes that are off. It also raises the nodes' file-watch
+limits (`fs.inotify`), which busy nodes run out of.
+
+At the end it shows which nodes need a reboot and asks which to **reboot
+now** (`r` for the ones that need it, `a`, numbers, or blank for later).
+Each is drained, rebooted, waited for until it is Ready again (and its etcd
+healthy, for a control plane), and uncordoned before the next one starts.
+The node running the update goes last.
+
 ### WireGuard VPN
 
 wg-easy runs on a MetalLB IP. It asks for the subnet(s) VPN clients may reach,
@@ -335,6 +418,80 @@ KubesTUI is the terminal UI for everything above. It runs in two modes:
   kubeconfig), then runs homelabCD operations on that control plane and opens
   SSH sessions to any node in its built-in terminal. Its data is stored under
   `~/.kubestui`.
+
+### The menu
+
+Both modes group the menu into tabs: **Command Center**, **Cluster**,
+**VPN**, **Update**, **Remote Join** and **Bootstrappers**. **←/→**, **Tab**,
+the number keys **1-6** or a click switch tabs; **↑/↓** and **Enter** pick an
+item. In node mode, **D** switches between SAFE-DRY-RUN and LIVE from any tab.
+
+The Command Center tab has the tools:
+
+| Item | What it does |
+|---|---|
+| Command Center | Live view of the whole cluster (below) |
+| Files | Two-pane file manager across this computer and every node (below) |
+| SSH Console | A shell on any node; **K** installs this machine's key on a node once, so later logins need no password. Opens instantly with the node list the activity lights already have, then refreshes |
+| Transfer Files to a Node | (workstation) Copy files or folders from this computer to a node (below) |
+| Open Shell on Control Plane, Open k9s | (workstation) A terminal on the control plane; k9s on this computer |
+| Share KubesTUI with a Workstation | (node mode) Sets up workstation mode on another computer |
+
+### Files
+
+A two-pane file manager, like superfile or Midnight Commander, across
+**this computer and every node**. Each pane shows one device; the active
+pane has the bright border.
+
+| Key | Action |
+|---|---|
+| Tab / click | Switch pane |
+| **o**, **[ ]**, click the device name | Change the pane's device: **o** opens the list (with status lights), **[** / **]** step to the previous/next device |
+| Enter / → | Open a folder, preview a file |
+| ← / Backspace | Up a folder |
+| Space / Ctrl+A | Mark / mark all |
+| **c** (F5) / **m** (F6) | Copy / move the marked items (or the one under the cursor) into the other pane's folder |
+| r (F2) / n (F7) / d (F8, Del) | Rename / new folder / delete |
+| / / ? / g / ~ | Filter / search below / go to a path / home |
+| i / . / Ctrl+R | Size of the selection / hidden files / reload |
+| Esc / q | Clear the filter or search, then back to the menu |
+
+Copy and move take the fastest route:
+
+| From → to | How |
+|---|---|
+| node → another node | Straight between the two nodes with two Kubernetes Jobs: a receiver on the destination (`nc -l \| tar -x`) and a sender on the source (`tar -c \| nc`), in the `kubestui` namespace. The data never goes through your computer; the Jobs are removed afterwards |
+| within one node | `cp -a` / `mv` on the node |
+| this computer ↔ node | tar over SSH |
+| hosts that aren't cluster nodes | relayed through KubesTUI |
+
+Safety: system folders (`/etc`, `/usr`, `/boot`, `/var/lib/kubelet`,
+`/var/lib/containerd`, `/var/lib/etcd`, `/var/lib/longhorn`, ...) can be
+browsed but not changed, and top-level folders like `/home` can't be
+renamed or deleted. Deletes ask first, copies warn about files they would
+overwrite, a move deletes the originals only after the copy worked, and
+every change is logged to `~/.kubestui/files.log`. Folders the SSH user
+can't read or write use `sudo` when the node allows it without a password.
+Nodes are reached with the same SSH logins as the SSH Console.
+
+### Transfer Files to a Node
+
+(Workstation.) Copies files or folders from this computer to a node: a
+folder arrives with everything inside it.
+
+- **File or folder:** drag them from Explorer into the box (Windows Terminal
+  and PowerShell drops both work), type a path, or use **Browse files…** /
+  **Browse folder…** for the Windows dialogs (handy when the terminal
+  refuses drops, e.g. when it runs as administrator). Under WSL, `C:\...`
+  paths work too.
+- **Node:** every node with a green (on) or red (off) light. The SSH user
+  follows the node: the one saved in the SSH Console, or the node's name
+  when your users are named after their nodes.
+- **Folder on the node:** defaults to `/home/<user>/`; it's created if
+  missing. If it needs root, it asks to use sudo.
+
+Every kind of file is sent, including OneDrive online-only files; files that
+can't be read (in use, no permission) are skipped and listed at the end.
 
 ### Command Center
 
@@ -363,6 +520,7 @@ cluster that refreshes every 2 seconds.
 | L | Logs of the selected pod (C next container, P previous run) |
 | X | Restart (delete) the selected pod; its controller starts a new one |
 | C | Cordon or uncordon the selected node |
+| E | (storage panel) Change App Storage |
 | + / - | Refresh faster or slower (1s to 30s); P pauses |
 | Esc | Close details, clear filters, then back to the menu |
 

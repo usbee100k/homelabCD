@@ -43,6 +43,8 @@ run_compose_tool() {
         METALLB_RANGE="${METALLB_RANGE:-}" \
         VPN_LB_IP="${VPN_LB_IP:-}" \
         COMPOSE_FILE="${COMPOSE_FILE:-}" \
+        COMPOSE_SOURCE_NODE="${COMPOSE_SOURCE_NODE:-}" \
+        COMPOSE_SOURCE_DIR="${COMPOSE_SOURCE_DIR:-}" \
         KUBESTUI_RESULT_FILE="${result}" \
         "$(kubestui_bin)" "${sub}" </dev/tty >/dev/tty 2>&1; then
         rm -f "${result}"
@@ -117,9 +119,22 @@ compose_import() {
 
     quiet_gitops_prepare
 
-    local app
-    app="$(run_compose_tool compose-import)" || return 1
+    local out app
+    out="$(run_compose_tool compose-import)" || return 1
+    app="$(head -n 1 <<<"${out}")"
     [[ -n "${app}" ]] || return 1
+
+    # Folders whose data should come along (the compose file was on a
+    # node): copy them into the new volumes before Argo CD starts the app.
+    if grep -q $'^COPY\t' <<<"${out}"; then
+        if ! compose_copy_data "${app}" "${out}"; then
+            log_error "Copying the data failed; ${app} was not imported. Nothing was pushed."
+            gitops_git checkout -q -- .
+            gitops_git clean -qfd
+            gitops_fix_ownership
+            return 1
+        fi
+    fi
 
     gitops_commit_push "Import ${app} from Docker Compose"
 
@@ -128,6 +143,28 @@ compose_import() {
     echo
     echo "  Files: ${GITOPS_DIR}/apps/applications/${app}/ (see README.md there)"
     echo
+}
+
+# compose_copy_data APP OUT
+# OUT lines "COPY<tab>NODE<tab>FOLDER<tab>CLAIM": copy FOLDER on NODE into
+# the app's new Longhorn volume CLAIM (created now from the generated
+# manifest; Argo CD adopts it).
+compose_copy_data() {
+
+    local app="$1" out="$2" tag node src claim manifest
+    local res="${GITOPS_DIR}/apps/applications/${app}/resources"
+
+    kubectl create namespace "${app}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null || return 1
+
+    while IFS=$'\t' read -r tag node src claim; do
+        [[ "${tag}" == COPY && -n "${claim}" ]] || continue
+        echo
+        log_info "Bringing ${src} from ${node} into the Longhorn volume ${claim}..."
+        manifest="${res}/pvc-${claim}.yaml"
+        [[ -f "${manifest}" ]] || { log_error "Missing ${manifest}"; return 1; }
+        kubectl -n "${app}" apply -f "${manifest}" >/dev/null || return 1
+        run_copy_job "${app}" "import-copy-${claim:0:50}" host "${src}" pvc "${claim}" "${node}" || return 1
+    done <<<"${out}"
 }
 
 compose_remove() {
@@ -238,6 +275,17 @@ storage_copy_files() {
             | kubectl -n "${ns}" apply -f - >/dev/null || return 1
         log_ok "Created Longhorn volume ${to}."
     fi
+
+    run_copy_job "${ns}" "${job}" "${from_type}" "${from}" "${to_type}" "${to}" "${node}"
+}
+
+# run_copy_job NS JOB FROM_TYPE FROM TO_TYPE TO NODE
+# Copies everything in one storage into another with a Job (cp -a, with
+# progress): TYPE is pvc (FROM/TO = claim) or host (FROM/TO = folder on
+# NODE). The Job runs on NODE when one is given.
+run_copy_job() {
+
+    local ns="$1" job="$2" from_type="$3" from="$4" to_type="$5" to="$6" node="$7" i
 
     vol() { # vol NAME TYPE SOURCE HOSTTYPE
         if [[ "$2" == pvc ]]; then
