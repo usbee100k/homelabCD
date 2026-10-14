@@ -66,6 +66,12 @@ watch_argocd_app() {
     log_info "Waiting for Argo CD to deploy ${app} (Ctrl+C stops watching; it keeps deploying)..."
 
     for i in $(seq 1 60); do
+        # An app homelabCD left out (wg-easy without the VPN) never shows up.
+        if (( i == 7 )) && ! kubectl -n argocd get application "${app}" >/dev/null 2>&1; then
+            log_warn "Argo CD has no app named ${app}: it isn't deployed in this cluster."
+            echo "  The change is saved in the GitOps repo and applies if ${app} is deployed later."
+            return 0
+        fi
         sync="$(kubectl -n argocd get application "${app}" -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
         health="$(kubectl -n argocd get application "${app}" -o jsonpath='{.status.health.status}' 2>/dev/null || true)"
         state="${sync:-Pending} / ${health:-Pending}"
@@ -150,21 +156,171 @@ compose_remove() {
 # "Change App Storage": where an app keeps each folder (Longhorn volume
 # or a folder on a node). KubesTUI writes the choice to the app's
 # storage-patch.yaml in the GitOps repo; this commits it and lets Argo CD
-# roll it out.
+# roll it out. If asked to copy the files, the app is stopped first (Argo
+# CD paused for it), the files copied by a Job, and then the change pushed
+# and Argo CD resumed, which starts the app with the new storage.
 app_storage() {
 
     header 2>/dev/null || true
 
     quiet_gitops_prepare
 
-    local app
-    app="$(run_compose_tool app-storage)" || return 1
+    local out app copied=false
+    out="$(run_compose_tool app-storage)" || return 1
+    app="$(head -n 1 <<<"${out}")"
     [[ -n "${app}" ]] || return 0
 
+    if grep -qx 'COPY=1' <<<"${out}"; then
+        if ! storage_copy_files "${app}" "${out}"; then
+            log_error "Copying failed; nothing was changed. ${app} starts again with its old storage."
+            gitops_git checkout -q -- .
+            gitops_git clean -qfd
+            gitops_fix_ownership
+            storage_resume_app "${app}"
+            return 1
+        fi
+        copied=true
+    fi
+
     gitops_commit_push "Change storage of ${app}"
+
+    [[ "${copied}" == true ]] && storage_resume_app "${app}"
 
     kubectl -n argocd annotate application "${app}" \
         argocd.argoproj.io/refresh=hard --overwrite >/dev/null 2>&1 || true
 
     watch_argocd_app "${app}" || true
+}
+
+# Lets Argo CD manage the app again (after storage_copy_files paused it).
+storage_resume_app() {
+    kubectl -n argocd annotate application "$1" \
+        argocd.argoproj.io/skip-reconcile- >/dev/null 2>&1 || true
+}
+
+# storage_copy_files APP PLAN
+# PLAN: KEY=value lines from `kubestui app-storage` (NS, KIND, NAME,
+# FROM_TYPE/FROM, TO_TYPE/TO: pvc + claim or host + path, NODE).
+storage_copy_files() {
+
+    local app="$1" plan="$2"
+    local ns kind name from_type from to_type to node job i
+
+    val() { sed -n "s/^$1=//p" <<<"${plan}" | head -n 1; }
+
+    ns="$(val NS)"; kind="$(val KIND)"; name="$(val NAME)"
+    from_type="$(val FROM_TYPE)"; from="$(val FROM)"
+    to_type="$(val TO_TYPE)"; to="$(val TO)"; node="$(val NODE)"
+    job="storage-copy-${name}"
+    job="${job:0:63}"
+
+    echo
+    log_info "Stopping ${name} so its files can be copied (Argo CD paused for ${app})..."
+
+    kubectl -n argocd annotate application "${app}" \
+        argocd.argoproj.io/skip-reconcile=true --overwrite >/dev/null || return 1
+
+    kubectl -n "${ns}" scale "${kind}/${name}" --replicas=0 >/dev/null || return 1
+
+    for i in {1..60}; do
+        [[ "$(kubectl -n "${ns}" get "${kind}/${name}" -o jsonpath='{.status.replicas}' 2>/dev/null)" =~ ^0?$ ]] && break
+        sleep 5
+    done
+    log_ok "${name} stopped."
+
+    # A new Longhorn volume doesn't exist until Argo CD creates it, so
+    # create it now from the GitOps files (Argo CD adopts it later).
+    if [[ "${to_type}" == pvc ]] && ! kubectl -n "${ns}" get pvc "${to}" >/dev/null 2>&1; then
+        local dir
+        dir="$(dirname "$(grep -rl --include=storage-pvcs.yaml "name: ${to}$" "${GITOPS_DIR}/apps" | head -n 1)")"
+        [[ -d "${dir}" ]] || { log_error "Can't find the new volume ${to} in the GitOps repo."; return 1; }
+        kubectl kustomize "${dir}" | yq "select(.kind == \"PersistentVolumeClaim\" and .metadata.name == \"${to}\")" \
+            | kubectl -n "${ns}" apply -f - >/dev/null || return 1
+        log_ok "Created Longhorn volume ${to}."
+    fi
+
+    vol() { # vol NAME TYPE SOURCE HOSTTYPE
+        if [[ "$2" == pvc ]]; then
+            printf '        - name: %s\n          persistentVolumeClaim:\n            claimName: "%s"\n' "$1" "$3"
+        else
+            printf '        - name: %s\n          hostPath:\n            path: "%s"\n            type: %s\n' "$1" "$3" "$4"
+        fi
+    }
+
+    kubectl -n "${ns}" delete job "${job}" --ignore-not-found --wait=true >/dev/null
+
+    kubectl apply -f - >/dev/null <<YAML || return 1
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${job}
+  namespace: ${ns}
+  labels:
+    app.kubernetes.io/managed-by: homelabcd
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+$( [[ -n "${node}" ]] && printf '      nodeName: %s\n' "${node}" )
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: copy
+          image: busybox:1.37
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Copying \$(du -sh /from | cut -f1) from the old location..."
+              cp -a /from/. /to/ &
+              pid=\$!
+              while kill -0 \$pid 2>/dev/null; do
+                sleep 30
+                echo "  copied so far: \$(du -sh /to | cut -f1)"
+              done
+              wait \$pid
+              echo "Copied. New location now holds \$(du -sh /to | cut -f1)."
+              echo "HOMELABCD: COPY DONE"
+          volumeMounts:
+            - name: from
+              mountPath: /from
+              readOnly: true
+            - name: to
+              mountPath: /to
+      volumes:
+$(vol from "${from_type}" "${from}" Directory)
+$(vol to "${to_type}" "${to}" DirectoryOrCreate)
+YAML
+
+    log_info "Copying files (this can take a while for large folders)..."
+
+    local phase=""
+    for i in {1..120}; do
+        phase="$(kubectl -n "${ns}" get pods -l job-name="${job}" \
+            -o jsonpath='{.items[0].status.phase}' 2>/dev/null || true)"
+        [[ "${phase}" == Running || "${phase}" == Succeeded || "${phase}" == Failed ]] && break
+        sleep 5
+    done
+
+    kubectl -n "${ns}" logs -f "job/${job}" 2>&1 || true
+
+    local result=""
+    while :; do
+        result="$(kubectl -n "${ns}" get job "${job}" \
+            -o jsonpath='{.status.succeeded}/{.status.failed}' 2>/dev/null || true)"
+        [[ -z "${result}" || "${result}" == 1/* || "${result}" == */[1-9]* ]] && break # empty: Job gone
+        sleep 10
+    done
+
+    if [[ "${result}" != 1/* ]]; then
+        kubectl -n "${ns}" logs "job/${job}" 2>&1 | tail -n 20 || true
+        kubectl -n "${ns}" describe pod -l job-name="${job}" 2>/dev/null | tail -n 15 || true
+        return 1
+    fi
+
+    kubectl -n "${ns}" delete job "${job}" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+    log_ok "Files copied."
 }
