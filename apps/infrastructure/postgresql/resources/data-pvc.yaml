@@ -1,0 +1,14 @@
+# The database files. 25Gi on Longhorn for now; move or resize it with
+# "Change App Storage" in KubesTUI.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgresql-data
+  namespace: postgresql
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 25Gi

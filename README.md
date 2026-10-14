@@ -34,11 +34,12 @@ and launches for you (there is also a plain text menu as a fallback).
 | **DuckDNS** (optional) | Keeps a `*.duckdns.org` domain pointing at your home IP |
 | **wg-easy** (optional) | WireGuard VPN with a web UI, for reaching the cluster from outside your LAN |
 | **qBittorrent** | Torrent client that only runs through a Private Internet Access VPN (see [Torrents through PIA](#torrents-through-pia)) |
+| **PostgreSQL + pgAdmin** | A database to learn and experiment with, on a 25Gi Longhorn volume, with the pgAdmin web UI (see [PostgreSQL](#postgresql)) |
 | **Rancher** | Included as an example app |
 
 Every web UI gets its own HTTPS address under your base domain, e.g.
 `argocd.<domain>`, `longhorn.<domain>`, `rancher.<domain>`,
-`qbittorrent.<domain>` and `wg.<domain>`. The subdomains are listed in
+`qbittorrent.<domain>`, `postgresql.<domain>` (pgAdmin) and `wg.<domain>`. The subdomains are listed in
 `config/ingress.yaml`.
 
 ---
@@ -275,6 +276,32 @@ To check later:
 kubectl -n qbittorrent logs deploy/qbittorrent -c gluetun     # VPN connection
 kubectl -n qbittorrent logs deploy/qbittorrent -c port-sync   # forwarded port
 ```
+
+### PostgreSQL
+
+A single PostgreSQL 17 server in the `postgresql` namespace, for learning
+and testing. Its data is on a 25Gi Longhorn volume (`postgresql-data`);
+move or resize it with **Change App Storage**. The login (user `postgres`,
+database `homelab`) gets a random password the first time Argo CD deploys
+it. The password is kept in the Secret `postgresql-auth`, never in Git.
+
+**Web UI:** pgAdmin at `https://postgresql.<domain>` (subdomain in
+`config/ingress.yaml`). Log in as `admin@<domain>` with the same password.
+The server "homelab PostgreSQL" is already listed; it asks for the password
+once when you open it (tick "Save password").
+
+```bash
+# the password
+kubectl -n postgresql get secret postgresql-auth -o jsonpath='{.data.password}' | base64 -d; echo
+
+# a psql prompt inside the server
+kubectl -n postgresql exec -it deploy/postgresql -- psql -U postgres homelab
+
+# connect from your PC (pgAdmin, DBeaver, psql) at localhost:5432
+kubectl -n postgresql port-forward svc/postgresql 5432:5432
+```
+
+Apps in the cluster connect to `postgresql.postgresql.svc.cluster.local:5432`.
 
 ### Docker Compose import
 

@@ -24,6 +24,10 @@ ingresses:
     path: apps/infrastructure/wg-easy/resources/ingress.yaml
     subdomain: wg
 
+  - name: postgresql
+    path: apps/infrastructure/postgresql/resources/ingress.yaml
+    subdomain: postgresql
+
 # ADDING NEW ONES EXAMPLE:
 #  - name: grafana
 #    path: apps/infrastructure/monitoring/resources/grafana-ingress.yaml

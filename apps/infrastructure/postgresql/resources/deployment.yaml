@@ -1,0 +1,93 @@
+# PostgreSQL for learning and testing: one server, data on a Longhorn
+# volume, login from the postgresql-auth Secret (see password-job.yaml).
+#
+# Inside the cluster: postgresql.postgresql.svc.cluster.local:5432
+# From your PC:       kubectl -n postgresql port-forward svc/postgresql 5432:5432
+# psql in the pod:    kubectl -n postgresql exec -it deploy/postgresql -- psql -U postgres homelab
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+  namespace: postgresql
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: postgresql
+
+  # The volume attaches to one node at a time: stop the old pod first.
+  strategy:
+    type: Recreate
+
+  template:
+    metadata:
+      labels:
+        app: postgresql
+
+    spec:
+      securityContext:
+        fsGroup: 999  # the postgres user in the image
+
+      containers:
+        - name: postgresql
+          image: postgres:17
+
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-auth
+                  key: username
+
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-auth
+                  key: password
+
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-auth
+                  key: database
+
+            # A subfolder: the volume's root has lost+found, which
+            # initdb refuses.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+
+            - name: TZ
+              value: "Etc/UTC"
+
+          ports:
+            - name: postgresql
+              containerPort: 5432
+              protocol: TCP
+
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 10
+
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 6
+
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 2Gi
+
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgresql-data

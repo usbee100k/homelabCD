@@ -13,4 +13,5 @@ resources:
   - node-feature-discovery/app.yaml
   - rancher/app.yaml
   - qbittorrent/app.yaml
+  - postgresql/app.yaml
   - wg-easy/app.yaml   # removed by the GitOps sync when vpn.enabled is false
