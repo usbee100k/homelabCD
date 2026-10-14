@@ -146,3 +146,25 @@ compose_remove() {
 
     log_ok "${app} removed."
 }
+
+# "Change App Storage": where an app keeps each folder (Longhorn volume
+# or a folder on a node). KubesTUI writes the choice to the app's
+# storage-patch.yaml in the GitOps repo; this commits it and lets Argo CD
+# roll it out.
+app_storage() {
+
+    header 2>/dev/null || true
+
+    quiet_gitops_prepare
+
+    local app
+    app="$(run_compose_tool app-storage)" || return 1
+    [[ -n "${app}" ]] || return 0
+
+    gitops_commit_push "Change storage of ${app}"
+
+    kubectl -n argocd annotate application "${app}" \
+        argocd.argoproj.io/refresh=hard --overwrite >/dev/null 2>&1 || true
+
+    watch_argocd_app "${app}" || true
+}

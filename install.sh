@@ -397,6 +397,9 @@ if [[ "${INSTALLER_MODE}" == "--run" ]]; then
         compose-remove)
             compose_remove
             ;;
+        app-storage)
+            app_storage || exit 1
+            ;;
         update)
             update_homelabcd || exit 1
             ;;
