@@ -126,7 +126,7 @@ compose_import() {
 
     # Folders whose data should come along (the compose file was on a
     # node): copy them into the new volumes before Argo CD starts the app.
-    if grep -q $'^COPY\t' <<<"${out}"; then
+    if grep -qE $'^COPY(FILE)?\t' <<<"${out}"; then
         if ! compose_copy_data "${app}" "${out}"; then
             log_error "Copying the data failed; ${app} was not imported. Nothing was pushed."
             gitops_git checkout -q -- .
@@ -156,6 +156,12 @@ compose_copy_data() {
 
     kubectl create namespace "${app}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null || return 1
 
+    # From another machine (not a cluster node): straight over SSH.
+    if [[ -n "${COMPOSE_SOURCE_EXTERNAL:-}" ]]; then
+        compose_copy_from_machine "${app}" "${out}"
+        return
+    fi
+
     while IFS=$'\t' read -r tag node src claim; do
         [[ "${tag}" == COPY && -n "${claim}" ]] || continue
         echo
@@ -165,6 +171,153 @@ compose_copy_data() {
         kubectl -n "${app}" apply -f "${manifest}" >/dev/null || return 1
         run_copy_job "${app}" "import-copy-${claim:0:50}" host "${src}" pvc "${claim}" "${node}" || return 1
     done <<<"${out}"
+}
+
+# compose_copy_from_machine APP OUT
+# The compose file came from another machine over SSH (a CasaOS or Docker
+# box): KubesTUI forwards its key for this session (SSH_AUTH_SOCK) and
+# passes the host key it trusted. Optionally stops the app there (STOP
+# line), then streams each folder (COPY) and file (COPYFILE) into its new
+# Longhorn volume through a short-lived pod.
+compose_copy_from_machine() {
+
+    local app="$1" out="$2" tag node src claim name manifest pod size proj ids rc
+    local res="${GITOPS_DIR}/apps/applications/${app}/resources"
+    local target="${COMPOSE_SOURCE_EXTERNAL}" port="${COMPOSE_SOURCE_PORT:-22}"
+
+    if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
+        log_error "No SSH key was forwarded from KubesTUI; run the import from KubesTUI."
+        return 1
+    fi
+    if [[ -z "${COMPOSE_SOURCE_HOSTKEY:-}" ]]; then
+        log_error "No host key for ${target}."
+        return 1
+    fi
+    local kh
+    kh="$(mktemp)"
+    printf '%s\n' "${COMPOSE_SOURCE_HOSTKEY}" >"${kh}"
+    local -a SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="${kh}"
+        -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=15 -o ServerAliveInterval=30 -p "${port}" "${target}")
+
+    if ! "${SSH[@]}" true; then
+        log_error "Can't log in to ${target} over SSH from $(hostname)."
+        rm -f "${kh}"
+        return 1
+    fi
+
+    # Reading the apps' folders may need root there: none (root),
+    # passwordless sudo, or the sudo password, asked once (not saved).
+    local pw="" sudo=""
+    if ! "${SSH[@]}" '[ "$(id -u)" = 0 ]'; then
+        if "${SSH[@]}" 'sudo -n true' 2>/dev/null; then
+            sudo="sudo -n"
+        else
+            echo
+            read -r -s -p "  sudo password for ${target} (to read the app's files; Enter to try without): " pw || true
+            echo
+            if [[ -n "${pw}" ]]; then
+                if ! printf '%s\n' "${pw}" | "${SSH[@]}" "sudo -S -p '' true" 2>/dev/null; then
+                    log_error "sudo refused that password on ${target}."
+                    rm -f "${kh}"
+                    return 1
+                fi
+                sudo="sudo -S -p ''"
+            fi
+        fi
+    fi
+    # on_machine CMD: runs CMD there; the sudo password (if any) is its stdin.
+    on_machine() { printf '%s\n' "${pw}" | "${SSH[@]}" "$1"; }
+
+    proj="$(awk -F'\t' '$1=="STOP"{print $2; exit}' <<<"${out}")"
+    if [[ -n "${proj}" ]]; then
+        echo
+        log_info "Stopping ${proj} on ${target}..."
+        ids="$(on_machine "${sudo} docker ps -q --filter label=com.docker.compose.project=$(printf %q "${proj}")" 2>/dev/null | tr '\n' ' ' || true)"
+        if [[ -n "${ids// /}" ]]; then
+            if on_machine "${sudo} docker stop ${ids}" >/dev/null; then
+                log_ok "Stopped ${proj} on ${target} (start it there again if you need it)."
+            else
+                log_warn "Couldn't stop ${proj} on ${target}; copying while it runs."
+            fi
+        else
+            log_info "${proj} isn't running on ${target}."
+        fi
+    fi
+
+    # fd 3: commands in the loop (ssh, kubectl) can't eat the list.
+    while IFS=$'\t' read -r -u 3 tag node src claim name; do
+        [[ ( "${tag}" == COPY || "${tag}" == COPYFILE ) && -n "${claim}" ]] || continue
+        echo
+        log_info "Bringing ${target}:${src} into the Longhorn volume ${claim}..."
+        manifest="${res}/pvc-${claim}.yaml"
+        [[ -f "${manifest}" ]] || { log_error "Missing ${manifest}"; rm -f "${kh}"; return 1; }
+        kubectl -n "${app}" apply -f "${manifest}" >/dev/null || { rm -f "${kh}"; return 1; }
+
+        pod="import-recv-${claim:0:40}"
+        kubectl -n "${app}" delete pod "${pod}" --ignore-not-found --wait=true >/dev/null 2>&1 || true
+        kubectl apply -f - >/dev/null <<YAML || { rm -f "${kh}"; return 1; }
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${pod}
+  namespace: ${app}
+  labels:
+    app.kubernetes.io/managed-by: homelabcd
+spec:
+  restartPolicy: Never
+  tolerations:
+    - operator: Exists
+  containers:
+    - name: recv
+      image: busybox:1.37
+      command: ["sleep", "86400"]
+      volumeMounts:
+        - name: to
+          mountPath: /to
+  volumes:
+    - name: to
+      persistentVolumeClaim:
+        claimName: "${claim}"
+YAML
+        if ! kubectl -n "${app}" wait --for=condition=Ready "pod/${pod}" --timeout=300s >/dev/null; then
+            log_error "The volume ${claim} didn't come up."
+            kubectl -n "${app}" describe pod "${pod}" 2>/dev/null | tail -n 15 || true
+            kubectl -n "${app}" delete pod "${pod}" --wait=false >/dev/null 2>&1 || true
+            rm -f "${kh}"
+            return 1
+        fi
+
+        if [[ "${tag}" == COPY ]]; then
+            size="$(on_machine "${sudo} du -sh $(printf %q "${src}") 2>/dev/null | cut -f1" 2>/dev/null || true)"
+            log_info "Copying ${size:-the folder} (progress below)..."
+            if on_machine "${sudo} tar -C $(printf %q "${src}") -cf - ." |
+                dd bs=1M status=progress |
+                kubectl -n "${app}" exec -i "${pod}" -- tar -xf - -C /to; then
+                rc=(0 0 0)
+            else
+                rc=("${PIPESTATUS[@]}")
+            fi
+        else
+            if on_machine "${sudo} cat $(printf %q "${src}")" |
+                dd bs=1M status=progress |
+                kubectl -n "${app}" exec -i "${pod}" -- sh -c "cat > /to/$(printf %q "${name}")"; then
+                rc=(0 0 0)
+            else
+                rc=("${PIPESTATUS[@]}")
+            fi
+        fi
+        kubectl -n "${app}" delete pod "${pod}" --wait=false >/dev/null 2>&1 || true
+        if [[ "${rc[0]}" != 0 || "${rc[1]}" != 0 || "${rc[2]}" != 0 ]]; then
+            log_error "Copying ${src} failed (machine ${rc[0]}, transfer ${rc[1]}, volume ${rc[2]})."
+            if [[ "${rc[0]}" != 0 && -z "${sudo}" ]]; then
+                log_error "If it says Permission denied, use a user with sudo, or root."
+            fi
+            rm -f "${kh}"
+            return 1
+        fi
+        log_ok "Copied."
+    done 3<<<"${out}"
+    rm -f "${kh}"
 }
 
 compose_remove() {
