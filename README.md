@@ -467,6 +467,7 @@ The Command Center tab has the tools:
 | Command Center | Live view of the whole cluster (below) |
 | Files | Two-pane file manager across this computer, every node and every Longhorn volume (below) |
 | SSH Console | A shell on any node; **K** installs this machine's key on a node once, so later logins need no password. Opens instantly with the node list the activity lights already have, then refreshes |
+| Trust Cluster Certificates | (workstation) Lists the cluster's own certificate authorities (cert-manager CA issuers: the Homelab Root CA, Rancher's, any you add) with fingerprints and whether this computer trusts them. **T** trusts the selected or marked ones (**Space**), **A** all, **R** removes; on Windows they go into your user's trusted roots (Windows asks to confirm, no admin needed), on Linux the system CAs (sudo), on macOS the login keychain. **S** saves them as `.crt` files in Downloads for phones |
 | Transfer Files to a Node | (workstation) Copy files or folders from this computer to a node (below) |
 | Open Shell on Control Plane, Open k9s | (workstation) A terminal on the control plane; k9s on this computer |
 | Share KubesTUI with a Workstation | (node mode) Sets up workstation mode on another computer |

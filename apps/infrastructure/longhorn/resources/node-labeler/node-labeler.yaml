@@ -38,6 +38,9 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # A run stuck on a node that went down (its pod never finishes
+      # terminating) would block every later run (Forbid): give up on it.
+      activeDeadlineSeconds: 120
       template:
         spec:
           serviceAccountName: longhorn-node-labeler
