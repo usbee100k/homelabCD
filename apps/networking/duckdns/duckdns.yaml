@@ -51,12 +51,16 @@ metadata:
   namespace: duckdns
 spec:
   schedule: "*/5 * * * *"
-  concurrencyPolicy: Forbid
+  # Replace, not Forbid: a run whose pod was on a node that went down
+  # never finishes (the pod stays Terminating), and Forbid would then
+  # stop every later update.
+  concurrencyPolicy: Replace
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
       backoffLimit: 2
+      activeDeadlineSeconds: 240
       template:
         spec:
           serviceAccountName: duckdns-updater
