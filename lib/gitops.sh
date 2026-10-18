@@ -616,5 +616,10 @@ gitops_commit_push() {
 update_gitops_templates() {
 
     gitops_prepare || return 1
-    gitops_apply_templates "Update homelabCD templates"
+    gitops_apply_templates "Update homelabCD templates" || return 1
+
+    # Not in the repository (argocd-cm comes from the Argo CD install).
+    if declare -F apply_argocd_health_checks >/dev/null; then
+        apply_argocd_health_checks
+    fi
 }

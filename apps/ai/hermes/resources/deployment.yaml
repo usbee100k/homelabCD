@@ -1,0 +1,117 @@
+# Hermes Agent (Nous Research): the messaging gateway plus the web dashboard.
+#
+# - Everything Hermes keeps lives in /opt/data (PVC hermes-data). The image
+#   starts as root only to fix that volume's ownership, then runs as the
+#   hermes user (UID 10000), so no runAsNonRoot here.
+# - Single writer: one replica, Recreate, so two pods never share the data.
+# - Model provider keys and bot tokens: set them in the dashboard (saved to
+#   /opt/data/.env), or put them in an optional Secret hermes-env, e.g.
+#     kubectl -n hermes create secret generic hermes-env \
+#       --from-literal=OPENROUTER_API_KEY=... --from-literal=TELEGRAM_BOT_TOKEN=...
+#     kubectl -n hermes rollout restart deployment hermes
+# - Interactive first-time setup / CLI chat:
+#     kubectl -n hermes exec -it deploy/hermes -- hermes setup
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes
+  namespace: hermes
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: hermes
+
+  strategy:
+    type: Recreate
+
+  template:
+    metadata:
+      labels:
+        app: hermes
+
+    spec:
+      containers:
+        - name: hermes
+          image: nousresearch/hermes-agent:v0.22.2
+          args: ["gateway", "run"]
+
+          envFrom:
+            - secretRef:
+                name: hermes-env
+                optional: true
+
+          env:
+            - name: HERMES_DASHBOARD
+              value: "1"
+
+            - name: HERMES_DASHBOARD_HOST
+              value: "0.0.0.0"
+
+            - name: HERMES_DASHBOARD_PORT
+              value: "9119"
+
+            # Dashboard login, from the Secret the auth Job creates.
+            - name: HERMES_DASHBOARD_BASIC_AUTH_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-dashboard-auth
+                  key: username
+
+            - name: HERMES_DASHBOARD_BASIC_AUTH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-dashboard-auth
+                  key: password
+
+            # Keeps dashboard sessions valid across pod restarts.
+            - name: HERMES_DASHBOARD_BASIC_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-dashboard-auth
+                  key: secret
+
+            - name: TZ
+              value: "Etc/UTC"
+
+          ports:
+            - name: dashboard
+              containerPort: 9119
+              protocol: TCP
+
+            # OpenAI-compatible API server; only listens once
+            # API_SERVER_ENABLED/HOST/KEY are set (e.g. in hermes-env).
+            - name: api
+              containerPort: 8642
+              protocol: TCP
+
+          startupProbe:
+            tcpSocket:
+              port: dashboard
+            periodSeconds: 5
+            failureThreshold: 60
+
+          readinessProbe:
+            tcpSocket:
+              port: dashboard
+            periodSeconds: 10
+
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 4Gi
+
+          volumeMounts:
+            - name: hermes-data
+              mountPath: /opt/data
+
+      restartPolicy: Always
+
+      volumes:
+        - name: hermes-data
+          persistentVolumeClaim:
+            claimName: hermes-data

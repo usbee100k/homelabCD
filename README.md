@@ -35,11 +35,12 @@ and launches for you (there is also a plain text menu as a fallback).
 | **wg-easy** (optional) | WireGuard VPN with a web UI, for reaching the cluster from outside your LAN |
 | **qBittorrent** | Torrent client that only runs through a Private Internet Access VPN (see [Torrents through PIA](#torrents-through-pia)) |
 | **PostgreSQL + pgAdmin** | A database to learn and experiment with, on a 25Gi Longhorn volume, with the pgAdmin web UI (see [PostgreSQL](#postgresql)) |
+| **Hermes Agent** | Nous Research's self-improving AI agent: messaging gateway plus web dashboard, on a 10Gi Longhorn volume (see [Hermes Agent](#hermes-agent)) |
 | **Rancher** | Included as an example app |
 
 Every web UI gets its own HTTPS address under your base domain, e.g.
 `argocd.<domain>`, `longhorn.<domain>`, `rancher.<domain>`,
-`qbittorrent.<domain>`, `postgresql.<domain>` (pgAdmin) and `wg.<domain>`. The subdomains are listed in
+`qbittorrent.<domain>`, `postgresql.<domain>` (pgAdmin), `hermes.<domain>` and `wg.<domain>`. The subdomains are listed in
 `config/ingress.yaml`.
 
 ---
@@ -326,6 +327,41 @@ kubectl -n postgresql port-forward svc/postgresql 5432:5432
 ```
 
 Apps in the cluster connect to `postgresql.postgresql.svc.cluster.local:5432`.
+
+### Hermes Agent
+
+[Hermes Agent](https://hermes-agent.nousresearch.com) in the `hermes`
+namespace (`apps/ai/hermes`), running `gateway run` with the dashboard on.
+Everything it keeps (config, `.env`, sessions, memories, skills, logs) is on
+a 10Gi Longhorn volume (`hermes-data`, mounted at `/opt/data`). It runs as a
+single replica because Hermes expects one writer.
+
+**Web UI:** the dashboard at `https://hermes.<domain>` (subdomain in
+`config/ingress.yaml`). Log in as `admin`; the password is random, created
+the first time Argo CD deploys it and kept in the Secret
+`hermes-dashboard-auth`, never in Git.
+
+Hermes needs a model provider before it can do anything. Add the key (and
+any bot tokens, e.g. Telegram or Discord) in the dashboard, run the setup
+wizard, or keep them in a Secret `hermes-env`:
+
+```bash
+# the dashboard password
+kubectl -n hermes get secret hermes-dashboard-auth -o jsonpath='{.data.password}' | base64 -d; echo
+
+# the interactive setup wizard / a CLI chat
+kubectl -n hermes exec -it deploy/hermes -- hermes setup
+kubectl -n hermes exec -it deploy/hermes -- hermes
+
+# provider keys and bot tokens as environment variables
+kubectl -n hermes create secret generic hermes-env \
+  --from-literal=OPENROUTER_API_KEY=... --from-literal=TELEGRAM_BOT_TOKEN=...
+kubectl -n hermes rollout restart deployment hermes
+```
+
+To use its OpenAI-compatible API from other apps, add `API_SERVER_ENABLED=true`,
+`API_SERVER_HOST=0.0.0.0` and `API_SERVER_KEY=<openssl rand -hex 32>` to
+`hermes-env`; it listens at `hermes.hermes.svc.cluster.local:8642`.
 
 ### Docker Compose import
 
@@ -640,6 +676,7 @@ apps/             Argo CD applications pushed to your GitOps repo
   infrastructure/ cert-manager, ingress-nginx, longhorn, metallb, metrics-server,
                   node-feature-discovery, rancher, qbittorrent, wg-easy
   networking/     duckdns
+  ai/             hermes
 bootstrap/        Argo CD values and ingress, the root app, the default project
 config/           settings (see above)
 templates/        Helm values templates (Cilium)

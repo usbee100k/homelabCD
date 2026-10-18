@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hermes
+  namespace: hermes
+  annotations:
+    cert-manager.io/cluster-issuer: homelab-ca
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    # Agent runs stream for a while; don't cut them off at 60s.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+  ingressClassName: nginx
+
+  tls:
+    - hosts:
+        - __HOSTNAME__
+      secretName: hermes-dashboard-tls
+
+  rules:
+    - host: __HOSTNAME__
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hermes
+                port:
+                  number: 9119

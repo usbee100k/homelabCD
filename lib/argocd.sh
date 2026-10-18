@@ -95,6 +95,7 @@ install_argocd() {
         --namespace argocd \
         --create-namespace \
         --values "${ROOT_DIR}/bootstrap/argocd/values.yaml" \
+        --set-file "configs.cm.resource\.customizations\.health\.apps_DaemonSet=${ROOT_DIR}/bootstrap/argocd/daemonset-health.lua" \
         --set-string "global.domain=${ARGOCD_DOMAIN}" \
         --set-string "configs.cm.url=https://${ARGOCD_DOMAIN}" \
         --set "server.replicas=${ARGOCD_REPLICAS}" \

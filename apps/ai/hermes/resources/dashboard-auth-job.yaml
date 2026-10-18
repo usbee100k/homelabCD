@@ -1,0 +1,75 @@
+# Creates the dashboard login once (Secret hermes-dashboard-auth: username,
+# password, secret) with a random password, so no password is stored in git.
+# Runs on every Argo CD sync and does nothing if the Secret exists.
+#
+# Read the password:
+#   kubectl -n hermes get secret hermes-dashboard-auth -o jsonpath='{.data.password}' | base64 -d; echo
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hermes-dashboard-auth
+  namespace: hermes
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hermes-dashboard-auth
+  namespace: hermes
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hermes-dashboard-auth
+  namespace: hermes
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: hermes-dashboard-auth
+subjects:
+  - kind: ServiceAccount
+    name: hermes-dashboard-auth
+    namespace: hermes
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hermes-dashboard-auth
+  namespace: hermes
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      serviceAccountName: hermes-dashboard-auth
+      restartPolicy: Never
+      containers:
+        - name: password
+          image: alpine/k8s:1.36.5  # kubectl + sh
+          command:
+            - /bin/sh
+            - -c
+            - |
+              if kubectl -n hermes get secret hermes-dashboard-auth >/dev/null 2>&1; then
+                echo "Secret hermes-dashboard-auth already exists; keeping it."
+                exit 0
+              fi
+              pw="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)"
+              secret="$(head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48)"
+              kubectl -n hermes create secret generic hermes-dashboard-auth \
+                --from-literal=username=admin \
+                --from-literal=password="${pw}" \
+                --from-literal=secret="${secret}"
+              echo "Created Secret hermes-dashboard-auth."

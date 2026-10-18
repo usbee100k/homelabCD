@@ -1,0 +1,71 @@
+#!/bin/sh
+# Cleans up pods Kubernetes leaves behind (homelabCD pod-cleanup).
+#
+# 1. Pods stuck Terminating on a node that is down or gone. Only that
+#    node's kubelet can confirm they stopped, so they never go away on their
+#    own: a Job with such a pod never finishes and its CronJob stops
+#    starting new runs. They are force-deleted once the node has been down
+#    for DOWN_AFTER seconds and the pod Terminating for STUCK_AFTER seconds.
+#    The pods themselves are not running anywhere that is up, and their
+#    controllers have already started replacements; Longhorn volumes stay
+#    safe (one node can attach them at a time).
+# 2. Failed or finished pods no controller cleans up (evicted pods, the
+#    ContainerStatusUnknown/NodeAffinity leftovers after a node restarts),
+#    once they are FINISHED_AFTER seconds old. Job pods are left to the
+#    Job's own history limits.
+#
+# DRY_RUN=1 only lists what would be deleted. Used by the pod-cleanup
+# CronJob every 2 minutes and by "Clean Up Stuck Pods" (install.sh --run
+# pod-cleanup).
+
+set -u
+
+STUCK_AFTER="${STUCK_AFTER:-300}"
+DOWN_AFTER="${DOWN_AFTER:-300}"
+FINISHED_AFTER="${FINISHED_AFTER:-3600}"
+DRY_RUN="${DRY_RUN:-0}"
+
+now="$(date -u +%s)"
+# RFC 3339 timestamps compare correctly as strings.
+ago() { date -u -d "@$((now - $1))" +%Y-%m-%dT%H:%M:%SZ; }
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+kubectl get nodes --request-timeout=30s -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\t"}{.status.conditions[?(@.type=="Ready")].lastTransitionTime}{"\n"}{end}' \
+    > "$tmp/nodes" || { echo "Could not list nodes."; exit 1; }
+kubectl get pods -A --request-timeout=60s -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\t"}{.status.phase}{"\t"}{.metadata.deletionTimestamp}{"\t"}{.spec.nodeName}{"\t"}{.metadata.ownerReferences[0].kind}{"\t"}{.metadata.creationTimestamp}{"\n"}{end}' \
+    > "$tmp/pods" || { echo "Could not list pods."; exit 1; }
+
+awk -F'\t' -v stuck="$(ago "$STUCK_AFTER")" -v down="$(ago "$DOWN_AFTER")" \
+    -v old="$(ago "$FINISHED_AFTER")" '
+    NR == FNR { ready[$1] = $2; since[$1] = $3; next }
+    {
+        ns = $1; pod = $2; phase = $3; del = $4; node = $5; owner = $6; created = $7
+        if (del != "") {
+            if (node == "" || del > stuck) next
+            if (!(node in ready))
+                print "force", ns, pod, "stuck Terminating; node " node " no longer exists"
+            else if (ready[node] != "True" && since[node] < down)
+                print "force", ns, pod, "stuck Terminating; node " node " is down"
+            next
+        }
+        if ((phase == "Failed" || phase == "Succeeded") && owner != "Job" && created < old)
+            print "delete", ns, pod, (phase == "Failed" ? "failed" : "finished") ", left behind"
+    }' "$tmp/nodes" "$tmp/pods" > "$tmp/plan"
+
+count=0
+while read -r action ns pod why; do
+    count=$((count + 1))
+    if [ "$DRY_RUN" = 1 ]; then
+        echo "would delete $ns/$pod ($why)"
+    elif [ "$action" = force ]; then
+        kubectl -n "$ns" delete pod "$pod" --grace-period=0 --force --wait=false >/dev/null 2>&1 &&
+            echo "force-deleted $ns/$pod ($why)"
+    else
+        kubectl -n "$ns" delete pod "$pod" --wait=false >/dev/null 2>&1 &&
+            echo "deleted $ns/$pod ($why)"
+    fi
+done < "$tmp/plan"
+
+[ "$count" -gt 0 ] || echo "No stuck or left-behind pods."

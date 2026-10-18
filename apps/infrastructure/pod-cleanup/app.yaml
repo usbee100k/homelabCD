@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pod-cleanup
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: homelab
+
+  # Every 2 minutes, removes pods stuck Terminating on a node that is down
+  # and failed/evicted pods left behind (resources/cleanup).
+  sources:
+    - repoURL: REPLACE_REPO_URL
+      targetRevision: REPLACE_BRANCH
+      path: apps/infrastructure/pod-cleanup/resources
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kubestui
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

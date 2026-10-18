@@ -66,14 +66,7 @@ remove_control_plane() {
         return 2
     fi
 
-    if ! id="$(etcd_member_at "${ip}" "${via}")"; then
-        log_error "Could not read the etcd members through ${via}."
-        return 1
-    fi
-
-    if [[ -n "${id}" ]]; then
-        etcd_on "${via}" https://127.0.0.1:2379 member remove "${id}" || return 1
-    fi
+    remove_control_plane_member "${node}" "${via}" || return 1
 
     kubectl delete node "${node}" --wait=false
     log_ok "${node} removed from etcd and the cluster."
@@ -81,6 +74,31 @@ remove_control_plane() {
     if [[ "${state}" == "up" ]]; then
         log_info "On ${node}, run now: sudo kubeadm reset -f"
         echo "       (or add it back later; the installer resets it first)."
+    fi
+}
+
+# Removes control plane $1's etcd member (if it has one), through the etcd
+# of control plane $2. The node itself stays.
+remove_control_plane_member() {
+    local node="$1" via="$2" ip id
+
+    ip="$(node_internal_ip "${node}")"
+    if [[ -z "${ip}" ]]; then
+        log_error "No address known for ${node}."
+        return 1
+    fi
+
+    if ! id="$(etcd_member_at "${ip}" "${via}")"; then
+        log_error "Could not read the etcd members through ${via}."
+        return 1
+    fi
+
+    if [[ -n "${id}" ]]; then
+        etcd_on "${via}" https://127.0.0.1:2379 member remove "${id}" >/dev/null || {
+            log_error "etcd did not remove ${node}'s member."
+            return 1
+        }
+        log_ok "${node} removed from etcd."
     fi
 }
 

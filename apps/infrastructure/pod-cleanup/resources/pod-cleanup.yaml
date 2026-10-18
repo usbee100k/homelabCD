@@ -1,0 +1,72 @@
+# Removes pods Kubernetes leaves behind, every 2 minutes: pods stuck
+# Terminating on a node that is down, and evicted/failed leftovers. See the
+# script (cleanup) for exactly what it deletes and when.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pod-cleanup
+  namespace: kubestui
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubestui-pod-cleanup
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubestui-pod-cleanup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubestui-pod-cleanup
+subjects:
+  - kind: ServiceAccount
+    name: pod-cleanup
+    namespace: kubestui
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pod-cleanup
+  namespace: kubestui
+spec:
+  schedule: "*/2 * * * *"
+  # Replace: a run whose own pod was on a node that went down must not
+  # block the next one (the next run then cleans that pod up too).
+  concurrencyPolicy: Replace
+  startingDeadlineSeconds: 100
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 100
+      backoffLimit: 0
+      template:
+        spec:
+          serviceAccountName: pod-cleanup
+          restartPolicy: Never
+          containers:
+            - name: cleanup
+              image: alpine/k8s:1.36.5  # kubectl + sh; keep minor in step with the cluster
+              command: ["/bin/sh", "/script/cleanup"]
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  memory: 128Mi
+              volumeMounts:
+                - name: script
+                  mountPath: /script
+          volumes:
+            - name: script
+              configMap:
+                name: pod-cleanup

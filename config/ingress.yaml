@@ -28,6 +28,10 @@ ingresses:
     path: apps/infrastructure/postgresql/resources/ingress.yaml
     subdomain: postgresql
 
+  - name: hermes
+    path: apps/ai/hermes/resources/ingress.yaml
+    subdomain: hermes
+
 # ADDING NEW ONES EXAMPLE:
 #  - name: grafana
 #    path: apps/infrastructure/monitoring/resources/grafana-ingress.yaml

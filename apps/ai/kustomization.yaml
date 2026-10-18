@@ -1,0 +1,5 @@
+# AI apps. Add <name>/app.yaml entries here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - hermes/app.yaml

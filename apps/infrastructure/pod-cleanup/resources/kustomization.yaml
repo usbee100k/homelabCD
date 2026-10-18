@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - pod-cleanup.yaml
+
+# The script is also run directly by "Clean Up Stuck Pods" (install.sh
+# --run pod-cleanup), so it is kept as its own file.
+configMapGenerator:
+  - name: pod-cleanup
+    namespace: kubestui
+    files:
+      - cleanup

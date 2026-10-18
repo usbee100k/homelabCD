@@ -1,0 +1,14 @@
+# /opt/data: config.yaml, .env (provider keys), sessions, memories,
+# skills, cron jobs and logs.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-data
+  namespace: hermes
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 10Gi

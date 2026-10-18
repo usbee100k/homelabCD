@@ -227,6 +227,9 @@ LIBRARIES=(
     kubestui
     remote-join
     etcd-members
+    pod-cleanup
+    decommission
+    services
 )
 
 
@@ -423,6 +426,15 @@ if [[ "${INSTALLER_MODE}" == "--run" ]]; then
             ;;
         os-update)
             update_node_os || exit 1
+            ;;
+        decommission)
+            decommission_node || exit 1
+            ;;
+        services)
+            toggle_services || exit 1
+            ;;
+        pod-cleanup)
+            pod_cleanup || exit 1
             ;;
         *)
             die "Unknown installer operation: ${INSTALLER_OP:-<empty>}"
