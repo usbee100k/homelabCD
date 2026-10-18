@@ -99,6 +99,11 @@ remote_join_node() {
 
     log_ok "SSH connected"
 
+    # Show the control plane count; add, replace one, or cancel.
+    if [[ "${role}" == "controlplane" ]] && command -v kubectl >/dev/null 2>&1; then
+        plan_control_planes || return 1
+    fi
+
     if declare -F generate_join_commands >/dev/null; then
         log_info "Refreshing join credentials on this bootstrap node"
         generate_join_commands || log_warn "Join command refresh failed; copying existing files if present"

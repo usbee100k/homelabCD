@@ -56,6 +56,7 @@ LIBRARIES=(
     secrets
     inventory
     node-labels
+    etcd-members
     longhorn-disk
     metallb
     health
@@ -82,6 +83,57 @@ fi
 # ADDITIONAL CONTROL PLANE JOIN
 #############################################
 
+# True when /etc/kubernetes holds what an earlier join of this node left
+# behind after it stopped part way: the cluster in admin.conf is the one in
+# the join command, it answers, and this node is not one of its nodes.
+is_failed_join_leftover() {
+
+    local join_script="$1"
+    local endpoint server nodes
+
+    [[ -f "${join_script}" ]] || return 1
+    command -v kubectl >/dev/null 2>&1 || return 1
+
+    endpoint="$(grep -oE 'kubeadm join [^ ]+' "${join_script}" | awk '{print $3}' | head -1)"
+    server="$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl config view --minify \
+        -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null)"
+    server="${server#https://}"
+
+    [[ -n "${endpoint}" && "${server%/}" == "${endpoint}" ]] || return 1
+
+    nodes="$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes \
+        -o name --request-timeout=15s 2>/dev/null)" || return 1
+    [[ -n "${nodes}" ]] || return 1
+
+    ! grep -qxiE "node/($(hostname)|$(hostname -s))" <<< "${nodes}"
+}
+
+# Prints this node's name when it is in the cluster but has no etcd member:
+# it was removed while it was down so another control plane could join, or
+# an earlier join stopped after the node registered.
+node_without_etcd_member() (
+    export KUBECONFIG=/etc/kubernetes/admin.conf
+    local me ip via id
+
+    command -v kubectl >/dev/null 2>&1 || return 1
+    me="$(current_node_name)" || return 1
+    ip="$(node_internal_ip "${me}")"
+    [[ -n "${ip}" ]] || return 1
+    via="$(control_plane_states 2>/dev/null |
+        awk -v me="${me}" '$1 != me && $2 == "True" {print $1; exit}')"
+    [[ -n "${via}" ]] || return 1
+    id="$(etcd_member_at "${ip}" "${via}")" || return 1
+    [[ -z "${id}" ]] && echo "${me}"
+)
+
+reset_failed_join() {
+
+    kubeadm reset -f
+    systemctl stop kubelet || true
+    rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d
+    systemctl restart containerd
+}
+
 join_controlplane() {
 
     local JOIN_SCRIPT="${ROOT_DIR}/generated/secrets/controlplane_join.sh"
@@ -91,6 +143,16 @@ join_controlplane() {
     #########################################
     # Prevent Duplicate Join
     #########################################
+
+    local replaced
+    if [[ -f /etc/kubernetes/admin.conf ]] && replaced="$(node_without_etcd_member)"; then
+        log_warn "${replaced} is in the cluster but no longer has an etcd member"
+        log_warn "(it was replaced while it was down, or an earlier join stopped part way)."
+        log_info "Removing ${replaced} and resetting it so it can join again..."
+        KUBECONFIG=/etc/kubernetes/admin.conf kubectl delete node "${replaced}" --wait=false || true
+        reset_failed_join
+        log_ok "Reset; joining again."
+    fi
 
     if [[ -f /etc/kubernetes/admin.conf &&
           -f /etc/kubernetes/manifests/kube-apiserver.yaml ]] &&
@@ -102,6 +164,13 @@ join_controlplane() {
             /^[[:space:]]*next_step[[:space:]]/ {n++}' "${BASH_SOURCE[0]}")"
         finish_controlplane_join
         return 0
+    fi
+
+    if [[ -f /etc/kubernetes/admin.conf ]] && is_failed_join_leftover "${JOIN_SCRIPT}"; then
+        log_warn "An earlier join of $(hostname -s) stopped part way; it is not in the cluster."
+        log_info "Removing what that attempt left behind (kubeadm reset -f)..."
+        reset_failed_join
+        log_ok "Cleaned up; joining again."
     fi
 
     if [[ -f /etc/kubernetes/admin.conf ]]; then
@@ -299,9 +368,21 @@ join_controlplane() {
 
     next_step "Joining Kubernetes Control Plane"
 
-    if ! bash "${JOIN_SCRIPT}"; then
+    local join_log
+    join_log="$(mktemp)"
+
+    if ! bash "${JOIN_SCRIPT}" 2>&1 | tee "${join_log}"; then
 
         log_error "kubeadm join failed."
+
+        if grep -qE "unhealthy cluster|breaks active quorum|etcd cluster is not healthy" "${join_log}"; then
+            echo
+            echo "etcd refused to add this node because one of the current control planes"
+            echo "is unreachable. Adding a member then could cost the cluster its quorum."
+            echo "Add this control plane again from KubesTUI or the installer: they offer"
+            echo "to replace the one that is down. This attempt is cleaned up by itself."
+        fi
+        rm -f "${join_log}"
 
         echo
         echo "Debug commands:"
@@ -312,6 +393,8 @@ join_controlplane() {
         exit 1
 
     fi
+
+    rm -f "${join_log}"
 
     # The join script contains a bootstrap token and the certificate
     # key for the cluster CA; do not leave it on disk.

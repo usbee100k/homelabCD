@@ -226,6 +226,7 @@ LIBRARIES=(
     bootstrap-download
     kubestui
     remote-join
+    etcd-members
 )
 
 
