@@ -230,6 +230,7 @@ LIBRARIES=(
     pod-cleanup
     decommission
     services
+    web-logins
 )
 
 
@@ -432,6 +433,9 @@ if [[ "${INSTALLER_MODE}" == "--run" ]]; then
             ;;
         services)
             toggle_services || exit 1
+            ;;
+        web-logins)
+            change_web_logins || exit 1
             ;;
         pod-cleanup)
             pod_cleanup || exit 1
