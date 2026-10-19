@@ -21,16 +21,18 @@ if obj.spec ~= nil and obj.spec.updateStrategy ~= nil
     and obj.spec.updateStrategy.type == "OnDelete" then
   updated = desired
 end
+-- Argo CD's Lua has no string or math library: plain concatenation only.
 if updated >= desired and available >= desired then
   hs.status = "Healthy"
-  hs.message = string.format("%d of %d pods available", available, desired)
+  hs.message = available .. " of " .. desired .. " pods available"
 elseif updated * 2 > desired and available * 2 > desired then
+  local ok = available
+  if updated < ok then ok = updated end
   hs.status = "Healthy"
-  hs.message = string.format(
-    "%d of %d pods available; the others are on nodes that are down or still starting",
-    math.min(available, updated), desired)
+  hs.message = ok .. " of " .. desired ..
+    " pods available; the others are on nodes that are down or still starting"
 else
   hs.status = "Progressing"
-  hs.message = string.format("%d of %d pods updated, %d available", updated, desired, available)
+  hs.message = updated .. " of " .. desired .. " pods updated, " .. available .. " available"
 end
 return hs
