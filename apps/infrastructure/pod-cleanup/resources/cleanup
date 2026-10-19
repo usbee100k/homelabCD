@@ -13,8 +13,15 @@
 #    ContainerStatusUnknown/NodeAffinity leftovers after a node restarts),
 #    once they are FINISHED_AFTER seconds old. Job pods are left to the
 #    Job's own history limits.
+# 3. Pods still marked Ready on a node that is down. The controller manager
+#    normally marks them not ready, but misses it when it restarts after
+#    the node went down; their Services keep sending traffic to them (e.g.
+#    Longhorn's CSI pods then crash with "no route to host", and DNS fails
+#    half the time). They are marked not ready once the node has been down
+#    for DOWN_AFTER seconds; the node's kubelet sets the real state when it
+#    is back.
 #
-# DRY_RUN=1 only lists what would be deleted. Used by the pod-cleanup
+# DRY_RUN=1 only lists what would be done. Used by the pod-cleanup
 # CronJob every 2 minutes and by "Clean Up Stuck Pods" (install.sh --run
 # pod-cleanup).
 
@@ -32,22 +39,28 @@ ago() { date -u -d "@$((now - $1))" +%Y-%m-%dT%H:%M:%SZ; }
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-kubectl get nodes --request-timeout=30s -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\t"}{.status.conditions[?(@.type=="Ready")].lastTransitionTime}{"\n"}{end}' \
+# No --request-timeout: inside a pod it makes kubectl skip the service
+# account and try localhost:8080. The Job's activeDeadlineSeconds bounds a run.
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\t"}{.status.conditions[?(@.type=="Ready")].lastTransitionTime}{"\n"}{end}' \
     > "$tmp/nodes" || { echo "Could not list nodes."; exit 1; }
-kubectl get pods -A --request-timeout=60s -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\t"}{.status.phase}{"\t"}{.metadata.deletionTimestamp}{"\t"}{.spec.nodeName}{"\t"}{.metadata.ownerReferences[0].kind}{"\t"}{.metadata.creationTimestamp}{"\n"}{end}' \
+kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\t"}{.status.phase}{"\t"}{.metadata.deletionTimestamp}{"\t"}{.spec.nodeName}{"\t"}{.metadata.ownerReferences[0].kind}{"\t"}{.metadata.creationTimestamp}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' \
     > "$tmp/pods" || { echo "Could not list pods."; exit 1; }
 
 awk -F'\t' -v stuck="$(ago "$STUCK_AFTER")" -v down="$(ago "$DOWN_AFTER")" \
     -v old="$(ago "$FINISHED_AFTER")" '
     NR == FNR { ready[$1] = $2; since[$1] = $3; next }
     {
-        ns = $1; pod = $2; phase = $3; del = $4; node = $5; owner = $6; created = $7
+        ns = $1; pod = $2; phase = $3; del = $4; node = $5; owner = $6; created = $7; podready = $8
         if (del != "") {
             if (node == "" || del > stuck) next
             if (!(node in ready))
                 print "force", ns, pod, "stuck Terminating; node " node " no longer exists"
             else if (ready[node] != "True" && since[node] < down)
                 print "force", ns, pod, "stuck Terminating; node " node " is down"
+            next
+        }
+        if (podready == "True" && node in ready && ready[node] != "True" && since[node] < down) {
+            print "unready", ns, pod, "marked Ready on node " node ", which is down"
             next
         }
         if ((phase == "Failed" || phase == "Succeeded") && owner != "Job" && created < old)
@@ -58,7 +71,16 @@ count=0
 while read -r action ns pod why; do
     count=$((count + 1))
     if [ "$DRY_RUN" = 1 ]; then
-        echo "would delete $ns/$pod ($why)"
+        if [ "$action" = unready ]; then
+            echo "would mark $ns/$pod not ready ($why)"
+        else
+            echo "would delete $ns/$pod ($why)"
+        fi
+    elif [ "$action" = unready ]; then
+        kubectl -n "$ns" patch pod "$pod" --subresource=status --type=strategic \
+            -p '{"status":{"conditions":[{"type":"Ready","status":"False","reason":"NodeDown"},{"type":"ContainersReady","status":"False","reason":"NodeDown"}]}}' \
+            >/dev/null 2>&1 &&
+            echo "marked $ns/$pod not ready ($why)"
     elif [ "$action" = force ]; then
         kubectl -n "$ns" delete pod "$pod" --grace-period=0 --force --wait=false >/dev/null 2>&1 &&
             echo "force-deleted $ns/$pod ($why)"
@@ -68,4 +90,4 @@ while read -r action ns pod why; do
     fi
 done < "$tmp/plan"
 
-[ "$count" -gt 0 ] || echo "No stuck or left-behind pods."
+[ "$count" -gt 0 ] || echo "No stuck, left-behind or falsely Ready pods."

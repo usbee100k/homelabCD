@@ -36,7 +36,7 @@ apply_argocd_health_checks() {
 }
 
 # "Clean Up Stuck Pods" (install.sh --run pod-cleanup): shows what the
-# cleanup would delete, asks, then deletes it now.
+# cleanup would do, asks, then does it now.
 pod_cleanup() {
 
     local plan answer
@@ -61,12 +61,12 @@ pod_cleanup() {
     if [[ "${plan}" != would* ]]; then
         log_ok "Nothing to clean up."
     else
-        read -rp "Delete these pods now? [Y/n] " answer || answer=n
+        read -rp "Clean these up now? [Y/n] " answer || answer=n
         if [[ "${answer:-Y}" =~ ^[Yy] ]]; then
             sh "${POD_CLEANUP_SCRIPT}"
             log_ok "Cleaned up."
         else
-            log_info "Nothing was deleted."
+            log_info "Nothing was changed."
         fi
     fi
 
