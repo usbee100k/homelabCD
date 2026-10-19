@@ -1,0 +1,60 @@
+# What Hermes may connect to. It runs shell commands and browses the web, so
+# a prompt injection could make it reach anything the pod can reach. This
+# allows the internet and DNS, plus the local LLM on the main PC, and blocks
+# the rest of the LAN and the cluster (PostgreSQL, Longhorn, the Kubernetes
+# API, routers, other machines). Cilium enforces it.
+#
+# To let Hermes use something else on the LAN or in the cluster, add an
+# egress rule for just that address and port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hermes-egress
+  namespace: hermes
+spec:
+  podSelector:
+    matchLabels:
+      app: hermes
+
+  policyTypes:
+    - Egress
+
+  egress:
+    # Cluster DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Local LLM server on the main PC (reserve this IP in the router).
+    # 11434 Ollama, 1234 LM Studio, 8080 llama.cpp server.
+    - to:
+        - ipBlock:
+            cidr: 192.168.50.177/32
+      ports:
+        - protocol: TCP
+          port: 11434
+        - protocol: TCP
+          port: 1234
+        - protocol: TCP
+          port: 8080
+
+    # The internet: everything except private, link-local (cloud metadata)
+    # and carrier-grade NAT ranges.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10

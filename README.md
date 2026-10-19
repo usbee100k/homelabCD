@@ -363,6 +363,14 @@ To use its OpenAI-compatible API from other apps, add `API_SERVER_ENABLED=true`,
 `API_SERVER_HOST=0.0.0.0` and `API_SERVER_KEY=<openssl rand -hex 32>` to
 `hermes-env`; it listens at `hermes.hermes.svc.cluster.local:8642`.
 
+**What it can reach:** Hermes runs shell commands and browses the web, so a
+NetworkPolicy (`apps/ai/hermes/resources/network-policy.yaml`) lets it reach
+only DNS, the internet and a local LLM server on the main PC
+(`192.168.50.177`, ports 11434 Ollama, 1234 LM Studio, 8080 llama.cpp). The
+rest of the LAN and the cluster is blocked; add a rule there for anything
+else it should use. Its volume gets a daily Longhorn snapshot (7 kept) to roll
+back to if its memory or settings get damaged.
+
 ### Docker Compose import
 
 Point it at a `docker-compose.yml` and it writes Kubernetes manifests to

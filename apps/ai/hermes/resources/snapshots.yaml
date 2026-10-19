@@ -1,0 +1,16 @@
+# Daily snapshot of hermes-data, 7 kept. Applies only to volumes whose PVC
+# carries the label recurring-job.longhorn.io/hermes-daily-snapshot.
+# Restore: Longhorn UI > Volume > hermes-data > Snapshots (scale Hermes to 0
+# first, e.g. with Turn Services On/Off).
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: hermes-daily-snapshot
+  namespace: longhorn-system
+spec:
+  task: snapshot
+  cron: "0 4 * * *"
+  retain: 7
+  concurrency: 1
+  groups: []
+  labels: {}

@@ -5,6 +5,11 @@ kind: PersistentVolumeClaim
 metadata:
   name: hermes-data
   namespace: hermes
+  # Daily Longhorn snapshot (snapshots.yaml): lets you roll the agent's
+  # memory, skills and settings back if it breaks or deletes them.
+  labels:
+    recurring-job.longhorn.io/source: enabled
+    recurring-job.longhorn.io/hermes-daily-snapshot: enabled
 spec:
   accessModes:
     - ReadWriteOnce

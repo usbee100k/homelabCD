@@ -33,6 +33,18 @@ spec:
         app: hermes
 
     spec:
+      # Time to finish a reply or a memory write when the pod stops.
+      terminationGracePeriodSeconds: 60
+
+      # The image starts as root (s6 init) to fix /opt/data's ownership and
+      # then runs Hermes as the hermes user (UID/GID 10000), so no
+      # runAsNonRoot; fsGroup keeps the volume group-owned by hermes.
+      securityContext:
+        fsGroup: 10000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+
       containers:
         - name: hermes
           image: nousresearch/hermes-agent:v0.22.2
@@ -98,10 +110,12 @@ spec:
               port: dashboard
             periodSeconds: 10
 
+          # 2 GiB is the minimum with browser tools. No CPU limit: throttling
+          # shows up as slow tool calls rather than a clear error.
           resources:
             requests:
               cpu: 250m
-              memory: 512Mi
+              memory: 2Gi
             limits:
               memory: 4Gi
 
@@ -109,9 +123,18 @@ spec:
             - name: hermes-data
               mountPath: /opt/data
 
+            # Chromium (browser tools) needs more than the default 64 MiB.
+            - name: dshm
+              mountPath: /dev/shm
+
       restartPolicy: Always
 
       volumes:
         - name: hermes-data
           persistentVolumeClaim:
             claimName: hermes-data
+
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
