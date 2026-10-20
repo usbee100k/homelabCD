@@ -45,6 +45,38 @@ spec:
         seccompProfile:
           type: RuntimeDefault
 
+      initContainers:
+        # Lets the dashboard trust ingress-nginx's X-Forwarded-* headers
+        # (real client IP, https): adds the cluster's pod network to
+        # dashboard.trusted_proxies in Hermes's own config.yaml on the
+        # volume, keeping everything else in it. Does nothing once present.
+        - name: trusted-proxies
+          image: mikefarah/yq:4.44.3
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              f=/opt/data/config.yaml
+              [ -s "${f}" ] || printf 'dashboard:\n  trusted_proxies: []\n' > "${f}"
+              if [ -n "$(yq ".dashboard.trusted_proxies[] | select(. == \"${CIDR}\")" "${f}")" ]; then
+                exit 0
+              fi
+              yq -i ".dashboard.trusted_proxies = ((.dashboard.trusted_proxies // []) + [\"${CIDR}\"] | unique)" "${f}"
+              echo "Added ${CIDR} to dashboard.trusted_proxies."
+          env:
+            - name: CIDR
+              value: "REPLACE_POD_SUBNET"
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: hermes-data
+              mountPath: /opt/data
+
       containers:
         - name: hermes
           image: nousresearch/hermes-agent:v0.22.2
