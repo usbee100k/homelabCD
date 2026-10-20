@@ -128,6 +128,12 @@ bootstrap_cluster() {
 
     configure_vpn
 
+    #############################################
+    # Hermes Agent: local LLM (optional)
+    #############################################
+
+    configure_hermes_llm
+
 
     next_step "Validating Host"
 

@@ -230,6 +230,7 @@ LIBRARIES=(
     pod-cleanup
     decommission
     services
+    hermes
     web-logins
 )
 
@@ -430,6 +431,9 @@ if [[ "${INSTALLER_MODE}" == "--run" ]]; then
             ;;
         decommission)
             decommission_node || exit 1
+            ;;
+        hermes-llm)
+            setup_hermes_llm || exit 1
             ;;
         services)
             toggle_services || exit 1

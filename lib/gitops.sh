@@ -278,6 +278,15 @@ gitops_render_templates() {
         [[ -n "${VPN_ALLOWED_IPS:-}" ]] || missing+=("vpn.allowedIPs")
     fi
 
+    # Hermes's local LLM: one IPv4 address (or CIDR), or empty for none.
+    local hermes_llm="${HERMES_LOCAL_LLM:-}"
+    [[ -z "${hermes_llm}" || "${hermes_llm}" == */* ]] || hermes_llm="${hermes_llm}/32"
+    if [[ -n "${hermes_llm}" && ! "${hermes_llm}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+        log_error "hermes.localLLM in config/cluster.yaml is not an IPv4 address: ${HERMES_LOCAL_LLM}"
+        log_error "Nothing was changed."
+        return 1
+    fi
+
     if (( ${#missing[@]} > 0 )); then
         log_error "Saved settings missing from config/cluster.yaml: ${missing[*]}"
         log_error "Nothing was changed. Fill them in there and run this again."
@@ -331,12 +340,20 @@ KUSTOMIZATION
             -e "s|REPLACE_VPN_PORT|${VPN_PORT:-51820}|g" \
             -e "s|REPLACE_VPN_LB_IP|${VPN_LB_IP:-}|g" \
             -e "s|REPLACE_VPN_ALLOWED_IPS|${VPN_ALLOWED_IPS:-}|g" \
+            -e "s|REPLACE_HERMES_LOCAL_LLM|${hermes_llm}|g" \
             {} +
 
     # The VPN is optional: without it, wg-easy is left out entirely.
     if [[ "${VPN_ENABLED:-false}" != "true" ]]; then
         sed -i '/wg-easy\/app.yaml/d' \
             "${out}/apps/infrastructure/kustomization.yaml"
+    fi
+
+    # Without a local LLM, Hermes gets no way into the LAN at all.
+    local hermes_dir="${out}/apps/ai/hermes/resources"
+    if [[ -z "${hermes_llm}" && -f "${hermes_dir}/network-policy-local-llm.yaml" ]]; then
+        sed -i '/network-policy-local-llm.yaml/d' "${hermes_dir}/kustomization.yaml"
+        rm -f "${hermes_dir}/network-policy-local-llm.yaml"
     fi
 
     render_gitops_ingresses "${out}" >/dev/null

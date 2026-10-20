@@ -1,0 +1,27 @@
+# Lets Hermes reach a local LLM server: hermes.localLLM in
+# config/cluster.yaml. Left out of the GitOps repo when that is empty.
+# 11434 Ollama, 1234 LM Studio, 8080 llama.cpp server.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hermes-local-llm
+  namespace: hermes
+spec:
+  podSelector:
+    matchLabels:
+      app: hermes
+
+  policyTypes:
+    - Egress
+
+  egress:
+    - to:
+        - ipBlock:
+            cidr: REPLACE_HERMES_LOCAL_LLM
+      ports:
+        - protocol: TCP
+          port: 11434
+        - protocol: TCP
+          port: 1234
+        - protocol: TCP
+          port: 8080

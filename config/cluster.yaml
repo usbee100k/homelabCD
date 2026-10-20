@@ -21,6 +21,11 @@ vpn:
   port: 51820
   ip: "" # MetalLB IP for wg-easy (forward UDP port to it on your router)
   allowedIPs: "" # node subnet(s) VPN clients can reach, e.g. 192.168.50.0/24
+# Hermes Agent (apps/ai/hermes). Its network policy blocks the LAN; this
+# lets it reach a local LLM server (Ollama 11434, LM Studio 1234,
+# llama.cpp 8080) on one machine. Reserve that IP in your router.
+hermes:
+  localLLM: "" # e.g. 192.168.50.177; empty = no local LLM
 features:
   cilium: true
   certManager: true

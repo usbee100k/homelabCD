@@ -38,6 +38,8 @@ load_config() {
     VPN_LB_IP=$(yq '.vpn.ip // ""' "${CONFIG_FILE}")
     VPN_ALLOWED_IPS=$(yq '.vpn.allowedIPs // ""' "${CONFIG_FILE}")
 
+    HERMES_LOCAL_LLM=$(yq '.hermes.localLLM // ""' "${CONFIG_FILE}")
+
 
     if [[ "${GITHUB_REPO}" == "null" || -z "${GITHUB_REPO}" ]]; then
         GITHUB_REPO="${saved_repo}"
@@ -62,6 +64,7 @@ load_config() {
     export ACME_EMAIL
     export METALLB_RANGE
     export VPN_ENABLED VPN_ENDPOINT VPN_PORT VPN_LB_IP VPN_ALLOWED_IPS
+    export HERMES_LOCAL_LLM
 }
 
 
@@ -89,6 +92,10 @@ save_config() {
          .vpn.port = ${VPN_PORT:-51820} |
          .vpn.ip = \"${VPN_LB_IP:-}\" |
          .vpn.allowedIPs = \"${VPN_ALLOWED_IPS:-}\"" \
+        "${CONFIG_FILE}"
+
+    yq -i \
+        ".hermes.localLLM = \"${HERMES_LOCAL_LLM:-}\"" \
         "${CONFIG_FILE}"
 }
 

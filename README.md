@@ -365,10 +365,11 @@ To use its OpenAI-compatible API from other apps, add `API_SERVER_ENABLED=true`,
 
 **What it can reach:** Hermes runs shell commands and browses the web, so a
 NetworkPolicy (`apps/ai/hermes/resources/network-policy.yaml`) lets it reach
-only DNS, the internet and a local LLM server on the main PC
-(`192.168.50.177`, ports 11434 Ollama, 1234 LM Studio, 8080 llama.cpp). The
-rest of the LAN and the cluster is blocked; add a rule there for anything
-else it should use. Its volume gets a daily Longhorn snapshot (7 kept) to roll
+only DNS, the internet and, if `hermes.localLLM` in `config/cluster.yaml` is
+set to a machine's IP, a local LLM server there (ports 11434 Ollama, 1234 LM
+Studio, 8080 llama.cpp; reserve that IP in your router). The rest of the LAN
+and the cluster is blocked; add a rule there for anything else it should
+use. Its volume gets a daily Longhorn snapshot (7 kept) to roll
 back to if its memory or settings get damaged.
 
 ### Docker Compose import
