@@ -60,7 +60,7 @@ Every web UI gets its own HTTPS address under your base domain, e.g.
 ## Quick start
 
 ```bash
-git clone https://github.comm/usbee100k/homelabCD.git
+git clone https://github.com/usbee100k/homelabCD.git
 cd homelabCD
 sudo ./install.sh
 ```

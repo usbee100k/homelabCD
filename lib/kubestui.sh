@@ -54,6 +54,15 @@ install_go_toolchain() {
 }
 
 
+# KubesTUI's Help shows this README; it is built in from help/homelabcd.md
+# (ignored by KubesTUI's git), so copy the current one in before a build.
+kubestui_copy_help() {
+    local src="$1"
+    mkdir -p "${src}/help" &&
+        cp -f "${ROOT_DIR}/README.md" "${src}/help/homelabcd.md" ||
+        log_warn "Could not copy README.md into KubesTUI; its Help will be empty."
+}
+
 install_kubestui() {
     local dest="${ROOT_DIR}/bin/kubestui"
     local src="${KUBESTUI_SRC:-${ROOT_DIR}/.src/KubesTUI}"
@@ -89,6 +98,8 @@ install_kubestui() {
     fi
 
     log_info "Building KubesTUI -> ${dest}"
+
+    kubestui_copy_help "${src}"
 
     (
         cd "${src}"
@@ -130,6 +141,8 @@ build_kubestui_dist() {
 
     mkdir -p "${out}"
     rm -f "${out}"/kubestui-* "${out}/SHA256SUMS"
+
+    kubestui_copy_help "${src}"
 
     local targets=(windows/amd64 windows/arm64 darwin/amd64 darwin/arm64 linux/amd64 linux/arm64)
     local n=0 started
