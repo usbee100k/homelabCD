@@ -163,6 +163,7 @@ and Argo CD applies it. homelabCD never overwrites your edits.
 | Set Up VPN | `apps/infrastructure/wg-easy/` and its line in `apps/infrastructure/kustomization.yaml` |
 | Import / Remove Compose App | `apps/applications/<name>/` |
 | Update GitOps Templates | Only what changed in homelabCD's templates (see below) |
+| Roll Back GitOps Change | A new commit with the files of the earlier version you pick (see below) |
 
 Before any of these, homelabCD pulls your latest commits. It stops, without
 changing anything, if the node's clone has uncommitted changes or commits that
@@ -199,6 +200,38 @@ Repositories set up by an older homelabCD have no `homelabcd-templates` branch.
 The first GitOps operation after upgrading creates it from the current
 templates without changing any of your files. Template changes made after that
 point are what later updates bring in.
+
+### Rolling back a change
+
+If something you changed in the repository breaks the cluster, run **Roll Back
+GitOps Change** (KubesTUI, Update tab, or `--run rollback`) on the bootstrap
+control plane:
+
+1. **Pick the last good version.** It lists the last 15 versions of the branch
+   Argo CD watches, newest first, with age, author and message. An Update GitOps
+   Templates counts as one version. Press ENTER to undo just the newest change,
+   or pick an older number.
+2. **Check and confirm.** It shows the changes that will be undone and the files
+   that change back, then asks before doing anything. Apps added by those changes
+   are removed from the cluster together with their volumes; apps they changed go
+   back to how they were.
+3. **It commits and pushes.** A new commit, "Roll back to `<hash>`: …", holds
+   exactly the files of that version. History is kept and nothing is
+   force-pushed to your branch, so a rollback can itself be undone: run it again
+   and pick the version just before "Roll back to …".
+4. **Argo CD resyncs right away.** Syncs still busy with the broken version are
+   stopped, every app re-reads the repository, apps that differ from git are
+   synced (services paused with Turn Services On/Off are left alone), and it shows
+   how many apps are synced and healthy until they settle (up to 5 minutes),
+   listing any that aren't.
+
+If you undo an Update GitOps Templates, homelabCD's template record
+(`homelabcd-templates`) moves back too, so the next Update GitOps Templates
+brings those template changes in again.
+
+Only what's in git is rolled back: something changed by hand with `kubectl`
+isn't, though Argo CD's self-heal usually reverts that anyway. It also doesn't
+change homelabCD or KubesTUI themselves.
 
 ---
 
@@ -268,6 +301,7 @@ All of these are in the KubesTUI menu, and can also be run directly with
 | Update Operating System | `os-update` | `apt update` and `apt upgrade -y` on all nodes or the ones you pick, then optional safe reboots (see below) |
 | Update homelabCD and KubesTUI | `update` | Pulls the latest homelabCD from GitHub (your saved settings in `config/` are kept; commits made by hand in the clone are saved on a `homelabcd-local-<date>` branch) and rebuilds KubesTUI. Run on the bootstrap control plane, it also adds kube-vip to control planes that don't have it. Reopen KubesTUI (`kbtui`) afterwards to use the new version |
 | Update GitOps Templates | `gitops-update` | Merges this homelabCD version's templates into your GitOps repository, keeping your edits and settings (see [Getting template updates](#getting-template-updates)) |
+| Roll Back GitOps Change | `rollback` | Returns your GitOps repository to an earlier version you pick, pushes it and makes Argo CD resync at once (see [Rolling back a change](#rolling-back-a-change)) |
 | (none) | `kubestui-dist` | Builds KubesTUI binaries for Windows, macOS and Linux (for workstation mode) |
 
 ### Torrents through PIA
@@ -501,9 +535,19 @@ KubesTUI is the terminal UI for everything above. It runs in two modes:
 ### The menu
 
 Both modes group the menu into tabs: **Command Center**, **Cluster**,
-**VPN**, **Update**, **Remote Join** and **Bootstrappers**. **←/→**, **Tab**,
-the number keys **1-6** or a click switch tabs; **↑/↓** and **Enter** pick an
-item. In node mode, **D** switches between SAFE-DRY-RUN and LIVE from any tab.
+**VPN**, **Update**, **Remote Join**, **Bootstrappers** and **Help**. **←/→**,
+**Tab**, the number keys **1-7** or a click switch tabs; **↑/↓** and **Enter**
+pick an item. In node mode, **D** switches between SAFE-DRY-RUN and LIVE from
+any tab.
+
+**Help** (also **?** in any menu, and on the workstation's cluster list) is
+this README inside KubesTUI, one item per section. A section opens in a reader
+that fits the window: **↑/↓** scroll, **←/→** go to the previous or next
+section, **Esc** goes back. **Search Help** (or **/** in the reader) narrows the
+sections as you type, best match first; the one you open has the words
+highlighted, and **n**/**N** jump between them. On a node the text comes from
+homelabCD's README itself; a workstation's KubesTUI has the copy from when it
+was built (Update KubesTUI on This Computer brings the newest).
 
 The Command Center tab has the tools:
 

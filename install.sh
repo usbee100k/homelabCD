@@ -231,6 +231,7 @@ LIBRARIES=(
     decommission
     services
     hermes
+    rollback
     web-logins
 )
 
@@ -431,6 +432,9 @@ if [[ "${INSTALLER_MODE}" == "--run" ]]; then
             ;;
         decommission)
             decommission_node || exit 1
+            ;;
+        rollback)
+            gitops_rollback || exit 1
             ;;
         hermes-llm)
             setup_hermes_llm || exit 1
