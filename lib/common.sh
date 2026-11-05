@@ -37,7 +37,7 @@ header() {
     clear
 
     echo "================================================"
-    echo "          HOMELAB KUBERNETES PLATFORM"
+    echo "        HOMELABCD KUBERNETES DASHBOARD"
     echo "================================================"
     echo
 
