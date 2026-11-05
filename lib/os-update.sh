@@ -233,25 +233,36 @@ YAML
 #############################################
 #
 # reboot_nodes_menu NAMES_ARRAY NEED_REBOOT_ARRAY
-# Asks which nodes to reboot now (blank = later, manually). Each one is
-# drained, rebooted, waited for until Ready with a new boot ID, and
-# uncordoned before the next starts, so the cluster stays up (with 3+
-# control planes) and pods move off workers first. The node running
-# this is rebooted last, without draining, because the session ends.
+# Asks which nodes to reboot now (blank = later, manually). One at a time,
+# each is drained, rebooted, waited for until Ready with a new boot ID,
+# and uncordoned, so the cluster stays up (with 3+ control planes) and
+# pods move off workers first. The node running this is rebooted last,
+# without draining, because the session ends.
+#
+# Nothing waits on a node that won't come: nodes that are down are
+# skipped, "s" + Enter skips the node being drained or waited for (one
+# that was already rebooted is uncordoned at the end once it's back), and
+# a failed node asks whether to go on with the next.
 #############################################
 
 reboot_nodes_menu() {
 
     local -n all_nodes="$1"
     local -n need_reboot="$2"
-    local i n answer self="" picked=()
+    local i n answer self="" picked=() state
+    declare -A node_ready=()
 
     self="$(current_node_name 2>/dev/null || true)"
+
+    while IFS=$'\t' read -r n state; do
+        [[ -n "${n}" ]] && node_ready["${n}"]="${state}"
+    done < <(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null || true)
 
     echo "Reboot nodes now?"
     for i in "${!all_nodes[@]}"; do
         n="${all_nodes[i]}"
         printf '  %2d) %-16s' "$((i + 1))" "${n}"
+        [[ "${node_ready[${n}]:-}" == True ]] || printf ' DOWN (skipped)'
         [[ " ${need_reboot[*]} " == *" ${n} "* ]] && printf ' needs reboot'
         [[ "${n}" == "${self}" ]] && printf ' (this node: rebooted last, ends this session)'
         echo
@@ -295,23 +306,130 @@ reboot_nodes_menu() {
     fi
 
     # This node last: rebooting it ends the session.
-    local ordered=() rc=0
+    local ordered=()
     for n in "${picked[@]}"; do [[ "${n}" == "${self}" ]] || ordered+=("${n}"); done
     [[ " ${picked[*]} " == *" ${self} "* && -n "${self}" ]] && ordered+=("${self}")
 
+    echo
+    log_info "While a node is draining or restarting, type s and press Enter to skip to the next one."
+
+    local rebooted=() skipped=() failed=() unwaited=() code
+    declare -gA OS_BOOT_BEFORE=()
+
     for n in "${ordered[@]}"; do
-        reboot_node_safely "${n}" "${self}" || { rc=1; log_error "Stopped: fix ${n} before rebooting more nodes."; break; }
+
+        state="$(kubectl get node "${n}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)"
+        if [[ "${state}" != True ]]; then
+            log_warn "${n} is down; skipping it (it can't be rebooted from here)."
+            skipped+=("${n} (down)")
+            continue
+        fi
+
+        if os_reboot_breaks_etcd "${n}"; then
+            skipped+=("${n} (would leave etcd without a majority)")
+            continue
+        fi
+
+        if reboot_node_safely "${n}" "${self}"; then
+            rebooted+=("${n}")
+        else
+            code=$?
+            case "${code}" in
+                2) skipped+=("${n} (skipped, not rebooted)") ;;
+                3) unwaited+=("${n}") ;;
+                *)
+                    failed+=("${n}")
+                    if [[ "${n}" != "${ordered[-1]}" ]]; then
+                        read -r -p "Go on with the next node? [Y/n] " answer || answer=n
+                        [[ "${answer:-Y}" =~ ^[Yy] ]] || break
+                    fi
+                    ;;
+            esac
+        fi
     done
 
-    return "${rc}"
+    # Nodes rebooted without waiting: uncordon the ones that are back.
+    local still=()
+    for n in "${unwaited[@]}"; do
+        local cur ready
+        cur="$(kubectl get node "${n}" -o jsonpath='{.status.nodeInfo.bootID}' 2>/dev/null || true)"
+        ready="$(kubectl get node "${n}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)"
+        if [[ -n "${cur}" && "${cur}" != "${OS_BOOT_BEFORE[${n}]:-}" && "${ready}" == True ]]; then
+            kubectl uncordon "${n}" >/dev/null 2>&1 || true
+            rebooted+=("${n}")
+        else
+            still+=("${n}")
+        fi
+    done
+
+    echo
+    echo "Reboot summary:"
+    echo "  Rebooted : ${rebooted[*]:-none}"
+    (( ${#skipped[@]} )) && printf '  Skipped  : %s\n' "${skipped[@]}"
+    (( ${#failed[@]} )) && echo "  Failed   : ${failed[*]}"
+    if (( ${#still[@]} )); then
+        echo "  Restarting (not waited for): ${still[*]}"
+        echo "    They stay cordoned (no new pods) until you run, once each is Ready:"
+        printf '      kubectl uncordon %s\n' "${still[@]}"
+    fi
+
+    (( ${#failed[@]} == 0 ))
+}
+
+# Waits up to $1 seconds. True if the user typed s (and Enter) to skip.
+os_skip_requested() {
+    local line
+    if [[ -t 0 ]]; then
+        if read -r -t "$1" line 2>/dev/null; then
+            [[ "${line,,}" == s* ]] && return 0
+        fi
+        return 1
+    fi
+    sleep "$1"
+    return 1
+}
+
+# True (with a message) when rebooting control plane $1 now would leave
+# etcd without a majority of its members up. With only 1 or 2 control
+# planes that can't be avoided, so it only warns.
+os_reboot_breaks_etcd() {
+
+    local node="$1" name status total=0 up=0 is_cp=false
+
+    while read -r name status; do
+        [[ -n "${name}" ]] || continue
+        total=$(( total + 1 ))
+        if [[ "${name}" == "${node}" ]]; then
+            is_cp=true
+        elif [[ "${status}" == True ]]; then
+            up=$(( up + 1 ))
+        fi
+    done < <(control_plane_states 2>/dev/null || true)
+
+    [[ "${is_cp}" == true ]] || return 1
+
+    if (( total <= 2 )); then
+        log_warn "${node} is one of only ${total} control plane(s): the Kubernetes API pauses until it's back."
+        return 1
+    fi
+
+    if (( up * 2 <= total )); then
+        log_warn "Rebooting ${node} now would leave ${up} of ${total} control planes up, and etcd needs"
+        log_warn "more than half; skipping it. Reboot it once the others are back."
+        return 0
+    fi
+
+    return 1
 }
 
 
 # reboot_node_safely NODE SELF
+# 0 rebooted and Ready, 1 failed, 2 skipped before rebooting (uncordoned
+# again), 3 rebooted but not waited for (still cordoned).
 reboot_node_safely() {
 
     local node="$1" self="$2" ns="kube-system"
-    local job="os-reboot-${node}" boot i ready cur
+    local job="os-reboot-${node}" boot i ready cur pid
 
     echo
     echo "============================================================"
@@ -319,10 +437,21 @@ reboot_node_safely() {
     echo "============================================================"
 
     boot="$(kubectl get node "${node}" -o jsonpath='{.status.nodeInfo.bootID}')"
+    OS_BOOT_BEFORE["${node}"]="${boot}"
 
     if [[ "${node}" != "${self}" ]]; then
-        log_info "Moving pods off ${node} (drain)..."
-        if ! kubectl drain "${node}" --ignore-daemonsets --delete-emptydir-data --timeout=5m; then
+        log_info "Moving pods off ${node} (drain)...  (s + Enter skips this node)"
+        kubectl drain "${node}" --ignore-daemonsets --delete-emptydir-data --timeout=5m &
+        pid=$!
+        while kill -0 "${pid}" 2>/dev/null; do
+            if os_skip_requested 2; then
+                { kill "${pid}" && wait "${pid}"; } 2>/dev/null || true
+                kubectl uncordon "${node}" >/dev/null 2>&1 || true
+                log_warn "Skipped ${node}; it was not rebooted."
+                return 2
+            fi
+        done
+        if ! wait "${pid}"; then
             log_error "Could not drain ${node}; not rebooting it."
             kubectl uncordon "${node}" >/dev/null 2>&1 || true
             return 1
@@ -363,15 +492,18 @@ spec:
                     "systemd-run", "--on-active=5", "--collect", "--quiet", "/bin/systemctl", "reboot"]
 YAML
 
-    log_info "Waiting for ${node} to restart and be Ready (up to 15 minutes)..."
+    log_info "Waiting for ${node} to restart and be Ready (up to 15 minutes; s + Enter goes on without waiting)..."
 
     for i in {1..180}; do
-        sleep 5
+        if os_skip_requested 5; then
+            log_warn "Not waiting for ${node}; it's checked again at the end."
+            return 3
+        fi
         cur="$(kubectl get node "${node}" -o jsonpath='{.status.nodeInfo.bootID}' 2>/dev/null || true)"
         ready="$(kubectl get node "${node}" \
             -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)"
         [[ -n "${cur}" && "${cur}" != "${boot}" && "${ready}" == "True" ]] && break
-        (( i % 12 == 0 )) && log_info "Still waiting for ${node} ($(( i * 5 ))s)..."
+        (( i % 12 == 0 )) && log_info "Still waiting for ${node} ($(( i * 5 ))s; s + Enter to go on)..."
     done
 
     if [[ "${cur}" == "${boot}" || "${ready}" != "True" ]]; then

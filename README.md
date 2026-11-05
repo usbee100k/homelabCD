@@ -512,6 +512,24 @@ Each is drained, rebooted, waited for until it is Ready again (and its etcd
 healthy, for a control plane), and uncordoned before the next one starts.
 The node running the update goes last.
 
+You never have to wait on a node that won't come:
+
+- **Nodes that are down** are marked DOWN in the list and skipped.
+- **Type `s` and press Enter** while a node is draining or restarting to go
+  on with the next one. Skipped while draining, it isn't rebooted (and is
+  uncordoned again). Skipped while restarting, it's checked again at the end
+  and uncordoned if it's back; if not, the summary tells you to run
+  `kubectl uncordon <node>` once it is.
+- **A control plane is skipped** if rebooting it would leave etcd without
+  more than half of its control planes up (for example while another one is
+  down). With only 1 or 2 control planes that can't be avoided, so it just
+  warns that the Kubernetes API pauses until the node is back.
+- **If a node fails** (it can't be drained, or doesn't come back within 15
+  minutes) it asks whether to go on with the next one.
+
+A summary at the end lists what was rebooted, skipped, failed or is still
+restarting.
+
 ### WireGuard VPN
 
 wg-easy runs on a MetalLB IP. It asks for the subnet(s) VPN clients may reach,
@@ -663,6 +681,7 @@ cluster that refreshes every 2 seconds.
 | Z | Zoom the panel to full screen |
 | L | Logs of the selected pod (C next container, P previous run) |
 | X | Restart (delete) the selected pod; its controller starts a new one |
+| D | Delete the selected pod for good. A pod a Job runs is deleted with its Job, so nothing starts it again; a pod on a node that is down, or stuck Terminating, is force-deleted. A Deployment, StatefulSet or DaemonSet starts a new one (the question says so; turn the app off with Turn Services On/Off to keep it stopped) |
 | C | Cordon or uncordon the selected node |
 | F | (storage panel) Files on the selected Longhorn volume |
 | E | (storage panel) Change App Storage |
