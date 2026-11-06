@@ -567,6 +567,25 @@ highlighted, and **n**/**N** jump between them. On a node the text comes from
 homelabCD's README itself; a workstation's KubesTUI has the copy from when it
 was built (Update KubesTUI on This Computer brings the newest).
 
+**Look:** the standard look has the homelabCD banner, a black-red background
+and heavy borders whose red, magenta and violet slowly flow clockwise. **Switch
+to Sleek Look** (Cluster tab) changes to a plain one: your terminal's own
+background, thin white borders and no banner; **Switch to Standard Look**
+brings it back. KubesTUI restarts by itself to apply it. The colours, the
+banner's lettering (`bubble`, `graffiti`, `bloody`, `blocks`) and the speed of
+the flow are settings in `~/.kubestui/theme` (on a node, where `kbtui` runs as
+root, `/root/.kubestui/theme`), one per line, for example:
+
+```
+style       = standard     # or sleek
+border      = #ff1f2d      # border colours: top, middle and end of the gradient
+border_mid  = #d4137a
+border_end  = #7b2fff
+background  = #170404      # or default (the terminal's own)
+banner_font = bubble
+flow        = 8            # seconds per turn of the colours; 0 = still
+```
+
 The Command Center tab has the tools:
 
 | Item | What it does |
